@@ -127,6 +127,66 @@ class UserService:
 
             raise
 
+    async def bulk_deactivate(self, user_ids):
+
+        results = []
+
+        for user_id in user_ids:
+
+            try:
+
+                await self.okta.request(
+                    "POST",
+                    f"/api/v1/users/{user_id}/lifecycle/deactivate",
+                    params={
+                        "sendEmail": "false"
+                    }
+                )
+
+                self._create_log(
+                    action="BULK_DEACTIVATE_USER",
+                    user_id=user_id,
+                    old_value="ACTIVE",
+                    new_value="DEACTIVATED",
+                    status="SUCCESS",
+                    message="User bulk deactivated successfully"
+                )
+
+                results.append({
+                    "user_id": user_id,
+                    "status": "deactivated"
+                })
+
+            except Exception as e:
+
+                self._create_log(
+                    action="BULK_DEACTIVATE_USER",
+                    user_id=user_id,
+                    old_value="ACTIVE",
+                    new_value="DEACTIVATED",
+                    status="FAILED",
+                    message=str(e)
+                )
+
+                results.append({
+                    "user_id": user_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+
+        return {
+            "total": len(user_ids),
+            "successful": sum(
+                1 for result in results
+                if result["status"] == "deactivated"
+            ),
+            "failed": sum(
+                1 for result in results
+                if result["status"] == "failed"
+            ),
+            "results": results
+        }
+
     async def deactivate_user(self, user_id):
 
         try:

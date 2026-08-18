@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, BulkDeactivateRequest
 from app.services.user_service import UserService
 
 
@@ -63,6 +63,19 @@ async def provision_user(user_id: str):
             detail=str(e)
         )
 
+@router.post("/bulk-deactivate")
+async def bulk_deactivate(request: BulkDeactivateRequest):
+
+    try:
+        return await service.bulk_deactivate(
+            request.user_ids
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 @router.post("/{user_id}/deactivate")
 async def deactivate_user(user_id: str):
