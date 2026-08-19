@@ -7,7 +7,8 @@ from app.routers import (
     users,
     groups,
     logs,
-    export
+    export,
+    bulk_users
 )
 
 
@@ -36,6 +37,7 @@ app.include_router(users.router)
 app.include_router(groups.router)
 app.include_router(logs.router)
 app.include_router(export.router)
+app.include_router(bulk_users.router)
 
 
 @app.get("/")
