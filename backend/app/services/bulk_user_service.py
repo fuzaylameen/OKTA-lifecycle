@@ -1,3 +1,7 @@
+import asyncio
+import csv
+import io
+
 from app.services.user_service import UserService
 
 
@@ -6,30 +10,42 @@ class BulkUserService:
     def __init__(self):
         self.user_service = UserService()
 
+        # Maximum number of Okta operations running at once
+        self.semaphore = asyncio.Semaphore(10)
+
     async def bulk_provision(self, user_ids: list[str]):
 
-        results = []
+        async def process_user(user_id):
 
-        for user_id in user_ids:
+            async with self.semaphore:
 
-            try:
-                result = await self.user_service.provision_user(user_id)
+                try:
+                    result = await self.user_service.provision_user(
+                        user_id
+                    )
 
-                results.append({
-                    "user_id": user_id,
-                    "status": "success",
-                    "action": "provision",
-                    "result": result
-                })
+                    return {
+                        "user_id": user_id,
+                        "status": "success",
+                        "action": "provision",
+                        "result": result
+                    }
 
-            except Exception as e:
+                except Exception as e:
 
-                results.append({
-                    "user_id": user_id,
-                    "status": "failed",
-                    "action": "provision",
-                    "error": str(e)
-                })
+                    return {
+                        "user_id": user_id,
+                        "status": "failed",
+                        "action": "provision",
+                        "error": str(e)
+                    }
+
+        tasks = [
+            process_user(user_id)
+            for user_id in user_ids
+        ]
+
+        results = await asyncio.gather(*tasks)
 
         return {
             "total": len(user_ids),
@@ -44,28 +60,37 @@ class BulkUserService:
 
     async def bulk_deactivate(self, user_ids: list[str]):
 
-        results = []
+        async def process_user(user_id):
 
-        for user_id in user_ids:
+            async with self.semaphore:
 
-            try:
-                result = await self.user_service.deactivate_user(user_id)
+                try:
+                    result = await self.user_service.deactivate_user(
+                        user_id
+                    )
 
-                results.append({
-                    "user_id": user_id,
-                    "status": "success",
-                    "action": "deactivate",
-                    "result": result
-                })
+                    return {
+                        "user_id": user_id,
+                        "status": "success",
+                        "action": "deactivate",
+                        "result": result
+                    }
 
-            except Exception as e:
+                except Exception as e:
 
-                results.append({
-                    "user_id": user_id,
-                    "status": "failed",
-                    "action": "deactivate",
-                    "error": str(e)
-                })
+                    return {
+                        "user_id": user_id,
+                        "status": "failed",
+                        "action": "deactivate",
+                        "error": str(e)
+                    }
+
+        tasks = [
+            process_user(user_id)
+            for user_id in user_ids
+        ]
+
+        results = await asyncio.gather(*tasks)
 
         return {
             "total": len(user_ids),
@@ -80,28 +105,37 @@ class BulkUserService:
 
     async def bulk_delete(self, user_ids: list[str]):
 
-        results = []
+        async def process_user(user_id):
 
-        for user_id in user_ids:
+            async with self.semaphore:
 
-            try:
-                result = await self.user_service.delete_user(user_id)
+                try:
+                    result = await self.user_service.delete_user(
+                        user_id
+                    )
 
-                results.append({
-                    "user_id": user_id,
-                    "status": "success",
-                    "action": "delete",
-                    "result": result
-                })
+                    return {
+                        "user_id": user_id,
+                        "status": "success",
+                        "action": "delete",
+                        "result": result
+                    }
 
-            except Exception as e:
+                except Exception as e:
 
-                results.append({
-                    "user_id": user_id,
-                    "status": "failed",
-                    "action": "delete",
-                    "error": str(e)
-                })
+                    return {
+                        "user_id": user_id,
+                        "status": "failed",
+                        "action": "delete",
+                        "error": str(e)
+                    }
+
+        tasks = [
+            process_user(user_id)
+            for user_id in user_ids
+        ]
+
+        results = await asyncio.gather(*tasks)
 
         return {
             "total": len(user_ids),
@@ -116,9 +150,6 @@ class BulkUserService:
 
     async def import_users_from_csv(self, file):
 
-        import csv
-        import io
-
         content = await file.read()
 
         text = content.decode("utf-8-sig")
@@ -127,70 +158,79 @@ class BulkUserService:
             io.StringIO(text)
         )
 
-        results = []
+        rows = list(reader)
 
-        for row_number, row in enumerate(
-            reader,
-            start=2
-        ):
+        async def process_row(row_number, row):
 
-            try:
+            async with self.semaphore:
 
-                first_name = (
-                    row.get("first_name") or ""
-                ).strip()
+                try:
 
-                last_name = (
-                    row.get("last_name") or ""
-                ).strip()
+                    first_name = (
+                        row.get("first_name") or ""
+                    ).strip()
 
-                email = (
-                    row.get("email") or ""
-                ).strip()
+                    last_name = (
+                        row.get("last_name") or ""
+                    ).strip()
 
-                # Validate required fields
-                if not first_name:
-                    raise ValueError(
-                        "first_name is required"
+                    email = (
+                        row.get("email") or ""
+                    ).strip()
+
+                    # Validate required fields
+                    if not first_name:
+                        raise ValueError(
+                            "first_name is required"
+                        )
+
+                    if not last_name:
+                        raise ValueError(
+                            "last_name is required"
+                        )
+
+                    if not email:
+                        raise ValueError(
+                            "email is required"
+                        )
+
+                    # Create user using the existing
+                    # UserService
+                    result = await self.user_service.create_user(
+                        {
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "email": email
+                        }
                     )
 
-                if not last_name:
-                    raise ValueError(
-                        "last_name is required"
-                    )
-
-                if not email:
-                    raise ValueError(
-                        "email is required"
-                    )
-
-                # Create user using the existing
-                # UserService
-                result = await self.user_service.create_user(
-                    {
-                        "first_name": first_name,
-                        "last_name": last_name,
-                        "email": email
+                    return {
+                        "row": row_number,
+                        "email": email,
+                        "status": "success",
+                        "action": "create",
+                        "user": result
                     }
-                )
 
-                results.append({
-                    "row": row_number,
-                    "email": email,
-                    "status": "success",
-                    "action": "create",
-                    "user": result
-                })
+                except Exception as e:
 
-            except Exception as e:
+                    return {
+                        "row": row_number,
+                        "email": row.get("email"),
+                        "status": "failed",
+                        "action": "create",
+                        "error": str(e)
+                    }
 
-                results.append({
-                    "row": row_number,
-                    "email": row.get("email"),
-                    "status": "failed",
-                    "action": "create",
-                    "error": str(e)
-                })
+        tasks = [
+            process_row(row_number, row)
+            for row_number, row in enumerate(
+                rows,
+                start=2
+            )
+        ]
+
+        results = await asyncio.gather(*tasks)
 
         return {
             "total": len(results),
