@@ -113,3 +113,96 @@ class BulkUserService:
             ),
             "results": results
         }
+
+    async def import_users_from_csv(self, file):
+
+        import csv
+        import io
+
+        content = await file.read()
+
+        text = content.decode("utf-8-sig")
+
+        reader = csv.DictReader(
+            io.StringIO(text)
+        )
+
+        results = []
+
+        for row_number, row in enumerate(
+            reader,
+            start=2
+        ):
+
+            try:
+
+                first_name = (
+                    row.get("first_name") or ""
+                ).strip()
+
+                last_name = (
+                    row.get("last_name") or ""
+                ).strip()
+
+                email = (
+                    row.get("email") or ""
+                ).strip()
+
+                # Validate required fields
+                if not first_name:
+                    raise ValueError(
+                        "first_name is required"
+                    )
+
+                if not last_name:
+                    raise ValueError(
+                        "last_name is required"
+                    )
+
+                if not email:
+                    raise ValueError(
+                        "email is required"
+                    )
+
+                # Create user using the existing
+                # UserService
+                result = await self.user_service.create_user(
+                    {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "email": email
+                    }
+                )
+
+                results.append({
+                    "row": row_number,
+                    "email": email,
+                    "status": "success",
+                    "action": "create",
+                    "user": result
+                })
+
+            except Exception as e:
+
+                results.append({
+                    "row": row_number,
+                    "email": row.get("email"),
+                    "status": "failed",
+                    "action": "create",
+                    "error": str(e)
+                })
+
+        return {
+            "total": len(results),
+            "successful": sum(
+                1
+                for r in results
+                if r["status"] == "success"
+            ),
+            "failed": sum(
+                1
+                for r in results
+                if r["status"] == "failed"
+            ),
+            "results": results
+        }
