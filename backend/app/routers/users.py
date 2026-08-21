@@ -17,6 +17,16 @@ async def get_users():
 
     return await service.list_users()
 
+@router.get("/all")
+async def get_all_users():
+
+    return await service.list_all_users()
+
+@router.get("/deprovisioned")
+async def get_deprovisioned_users():
+
+    return await service.list_deprovisioned_users()
+
 
 @router.post("/")
 async def create_user(user: UserCreate):

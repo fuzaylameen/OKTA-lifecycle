@@ -54,6 +54,23 @@ class UserService:
             "/api/v1/users"
         )
 
+    async def list_deprovisioned_users(self):
+
+        return await self.okta.request(
+            "GET",
+            "/api/v1/users",
+            params={
+                "filter": 'status eq "DEPROVISIONED"'
+            }
+        )
+
+    async def list_all_users(self):
+
+        users = await self.list_users()
+        deprovisioned_users = await self.list_deprovisioned_users()
+        return users + deprovisioned_users
+
+
     async def create_user(self, user_data):
 
         try:
