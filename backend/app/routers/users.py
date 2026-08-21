@@ -74,7 +74,6 @@ async def provision_user(user_id: str):
         )
 
 
-
 @router.post("/{user_id}/deactivate")
 async def deactivate_user(user_id: str):
 
@@ -109,6 +108,81 @@ async def delete_user(user_id: str):
         return {
             "success": True,
             "message": "User permanently deleted"
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+
+# ============================================================
+# PASSWORD EXPIRY ENDPOINTS
+# ============================================================
+
+@router.get("/password-expiry")
+async def get_password_expiry():
+
+    """
+    Get password expiry information for all users.
+    """
+
+    try:
+
+        return await service.list_password_expiry()
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+
+@router.get("/{user_id}/password-expiry")
+async def get_user_password_expiry(user_id: str):
+
+    """
+    Get password expiry information for one user.
+    """
+
+    try:
+
+        return await service.get_password_expiry(
+            user_id
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+
+@router.post("/{user_id}/expire-password")
+async def expire_user_password(user_id: str):
+
+    """
+    Force a user's password to expire in Okta.
+    """
+
+    try:
+
+        result = await service.expire_password(
+            user_id
+        )
+
+        return {
+            "success": True,
+            "message": (
+                "Password expired successfully. "
+                "The user must change their password "
+                "at the next login."
+            ),
+            "result": result
         }
 
     except Exception as e:
