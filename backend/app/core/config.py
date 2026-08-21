@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # Password expiry settings
+    PASSWORD_EXPIRY_DAYS: int = 90
+    PASSWORD_EXPIRY_WARNING_DAYS: int = 14
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True
