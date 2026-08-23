@@ -6,6 +6,3 @@ class UserCreate(BaseModel):
     last_name: str
     email: str
 
-
-class BulkDeactivateRequest(BaseModel):
-    user_ids: List[str]

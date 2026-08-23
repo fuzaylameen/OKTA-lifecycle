@@ -6,3 +6,4 @@ PyJWT
 cryptography
 sqlalchemy
 pydantic-settings
+python-multipart
