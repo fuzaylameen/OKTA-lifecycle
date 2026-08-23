@@ -10,7 +10,7 @@ from app.routers import (
     export,
     approvals,
     lifecycle,
-    timeline
+    timeline,
     bulk_users
 )
 
