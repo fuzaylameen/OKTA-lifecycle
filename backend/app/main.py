@@ -7,7 +7,10 @@ from app.routers import (
     users,
     groups,
     logs,
-    export
+    export,
+    approvals,
+    lifecycle,
+    timeline
 )
 
 
@@ -36,6 +39,9 @@ app.include_router(users.router)
 app.include_router(groups.router)
 app.include_router(logs.router)
 app.include_router(export.router)
+app.include_router(approvals.router)
+app.include_router(lifecycle.router)
+app.include_router(timeline.router)
 
 
 @app.get("/")

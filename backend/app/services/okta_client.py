@@ -9,11 +9,11 @@ from app.core.config import settings
 class OktaClient:
 
     def __init__(self):
-
         self.domain = settings.OKTA_DOMAIN.rstrip("/")
-        print(f"Okta domain: {self.domain}")
-
         self.client_id = settings.OKTA_CLIENT_ID
+
+        print(f"Okta domain: {self.domain}")
+        print(f"Okta client ID: {self.client_id}")
 
         with open(
             settings.OKTA_PRIVATE_KEY_PATH,
@@ -37,40 +37,50 @@ class OktaClient:
             "jti": str(uuid.uuid4())
         }
 
-        return jwt.encode(
+        assertion = jwt.encode(
             payload,
             self.private_key,
             algorithm="RS256"
         )
 
+        return assertion
+
     async def get_access_token(self):
 
+        # Reuse existing token if it is still valid
         if (
             self.access_token
             and time.time() < self.token_expiry - 60
         ):
             return self.access_token
 
+        # Create JWT client assertion
         assertion = self._create_client_assertion()
 
         data = {
             "grant_type": "client_credentials",
-            "scope": (
-                "okta.users.manage "
-                "okta.groups.manage "
-                "okta.logs.read"
-            ),
+
+            "scope": "okta.users.read",
+
             "client_assertion_type":
                 "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+
             "client_assertion": assertion
         }
 
+        token_url = f"{self.domain}/oauth2/v1/token"
 
-        # https://integrator-8486226.okta.com/oauth2/v1/token
+        print("\n========== OKTA TOKEN REQUEST ==========")
+        print("Token URL:", token_url)
+        print("Grant type:", data["grant_type"])
+        print("Client ID:", self.client_id)
+        print("Scope:", data["scope"])
+        print("========================================")
+
         async with httpx.AsyncClient() as client:
 
             response = await client.post(
-                f"{self.domain}/oauth2/v1/token",
+                token_url,
                 data=data,
                 headers={
                     "Accept": "application/json",
@@ -78,6 +88,14 @@ class OktaClient:
                         "application/x-www-form-urlencoded"
                 }
             )
+
+        # Print the actual Okta error
+        if response.status_code != 200:
+
+            print("\n========== OKTA TOKEN ERROR ==========")
+            print("Status:", response.status_code)
+            print("Response:", response.text)
+            print("======================================\n")
 
         response.raise_for_status()
 
@@ -89,6 +107,8 @@ class OktaClient:
             time.time()
             + token_data.get("expires_in", 3600)
         )
+
+        print("Okta access token received successfully.")
 
         return self.access_token
 
