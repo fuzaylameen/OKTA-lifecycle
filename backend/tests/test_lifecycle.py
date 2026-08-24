@@ -14,8 +14,10 @@ import httpx
 import pytest
 
 from app.integrations.impact_engine_client import evaluate_impact
+from app.integrations.policy_engine_client import evaluate_policy
 from app.services import lifecycle_execution_service
 from app.services import impact_service
+from app.services import policy_service
 from app.db.models_lifecycle import ApprovalRequest
 from tests.conftest import TestSessionLocal
 
@@ -1222,3 +1224,114 @@ async def test_evaluate_impact_does_not_swallow_non_http_errors(monkeypatch):
             "00uTargetUser",
             {"old_group_id": "grpOld", "new_group_id": "grpNew"},
         )
+
+
+# --- policy_service.evaluate() static per-operation-type rules (Category 4) ---
+
+
+@pytest.mark.parametrize(
+    "operation_type, expected_approval_required, expected_levels",
+    [
+        ("CREATE", False, []),
+        ("PROVISION", True, ["MANAGER"]),
+        ("GROUP_MOVE", True, ["MANAGER"]),
+        ("DEACTIVATE", True, ["MANAGER"]),
+        ("BULK_DEACTIVATE", True, ["MANAGER", "SECURITY"]),
+        ("DELETE", True, ["MANAGER", "SECURITY"]),
+    ],
+)
+def test_policy_service_static_rules_per_operation_type(
+    operation_type, expected_approval_required, expected_levels
+):
+
+    decision = policy_service.evaluate(operation_type, "00uTargetUser", {})
+
+    assert decision["approval_required"] is expected_approval_required
+    assert decision["required_levels"] == expected_levels
+    assert decision["reason"]
+
+
+def test_policy_service_unknown_operation_type_fails_closed():
+
+    decision = policy_service.evaluate("NOT_A_REAL_OPERATION", "00uTargetUser", {})
+
+    assert decision["approval_required"] is True
+    assert decision["required_levels"] == ["MANAGER"]
+
+
+def test_evaluate_policy_defaults_to_engine_unavailable_when_no_policy_service(
+    monkeypatch,
+):
+    """
+    app.services.policy_service now exists (Category 4 is implemented),
+    so the ImportError fallback in policy_engine_client can no longer
+    occur naturally. This test still exercises that fallback path by
+    forcing the import to fail, the same way it would if the module
+    were absent - see policy_engine_client.py's documented contract.
+    """
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "app.services.policy_service", None)
+
+    decision = evaluate_policy("DEACTIVATE", "00uTargetUser", {})
+
+    assert decision["source"] == "ENGINE_UNAVAILABLE"
+    assert decision["approval_required"] is True
+    assert decision["required_levels"] == ["MANAGER"]
+
+
+def test_evaluate_policy_returns_real_engine_result_with_source_engine():
+
+    decision = evaluate_policy("DELETE", "00uTargetUser", {})
+
+    assert decision["source"] == "ENGINE"
+    assert decision["approval_required"] is True
+    assert decision["required_levels"] == ["MANAGER", "SECURITY"]
+
+
+def test_dry_run_group_move_computes_real_policy_decision_end_to_end(
+    client, mock_okta_backed_services
+):
+    """
+    Confirms the full wiring: dry-run -> lifecycle_execution_service ->
+    policy_engine_client -> policy_service, without stubbing out
+    evaluate_policy itself.
+    """
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    operation = _dry_run(
+        client,
+        operation_type="GROUP_MOVE",
+        payload={"old_group_id": "grpOld", "new_group_id": "grpNew"},
+    )
+
+    policy_decision = operation["preview"]["policy_decision"]
+
+    assert policy_decision["source"] == "ENGINE"
+    assert policy_decision["approval_required"] is True
+    assert policy_decision["required_levels"] == ["MANAGER"]
+
+
+def test_dry_run_create_computes_real_policy_decision_end_to_end(
+    client, mock_okta_backed_services
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    operation = _dry_run(
+        client,
+        operation_type="CREATE",
+        target_user_id=None,
+        target_user_email=None,
+        payload={"first_name": "New", "last_name": "User", "email": "new.user@example.com"},
+    )
+
+    policy_decision = operation["preview"]["policy_decision"]
+
+    assert policy_decision["source"] == "ENGINE"
+    assert policy_decision["approval_required"] is False
+    assert policy_decision["required_levels"] == []
