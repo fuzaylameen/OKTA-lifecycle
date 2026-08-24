@@ -8,6 +8,7 @@ from app.services.user_service import UserService
 from app.services.group_service import GroupService
 from app.integrations.policy_engine_client import evaluate_policy
 from app.integrations.risk_engine_client import evaluate_risk
+from app.integrations.impact_engine_client import evaluate_impact
 
 
 # This module is the single owner of the lifecycle execution state
@@ -127,12 +128,14 @@ async def dry_run(
 
     policy_decision = evaluate_policy(operation_type, target_user_id, payload)
     risk_decision = evaluate_risk(operation_type, target_user_id, payload)
+    impact_decision = evaluate_impact(operation_type, target_user_id, payload)
 
     preview_payload = {
         "current_state": current_state,
         "proposed_change": _describe_proposed_change(operation_type, payload),
         "policy_decision": policy_decision,
         "risk_decision": risk_decision,
+        "impact_decision": impact_decision,
         "requested_by": requested_by
     }
 
@@ -174,6 +177,21 @@ async def dry_run(
             f"Risk score for {operation_type}: "
             f"{risk_decision.get('risk_score')} "
             f"(source={risk_decision.get('source')})"
+        ),
+        actor_email=requested_by,
+        related_operation_id=operation.id
+    )
+
+    record_event(
+        db,
+        event_category="IMPACT_ANALYSIS",
+        event_type="IMPACT_PREVIEWED",
+        identity_user_id=target_user_id,
+        identity_email=target_user_email,
+        description=(
+            f"Impact analysis for {operation_type}: "
+            f"{impact_decision.get('impact_level')} "
+            f"(source={impact_decision.get('source')})"
         ),
         actor_email=requested_by,
         related_operation_id=operation.id

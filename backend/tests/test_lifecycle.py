@@ -34,6 +34,20 @@ NO_RISK_DATA = {
     "source": "TEST_OVERRIDE",
 }
 
+NO_IMPACT_DATA = {
+    "impact_level": None,
+    "affected_resources": None,
+    "reason": "No impact engine in this test.",
+    "source": "TEST_OVERRIDE",
+}
+
+IMPACT_DATA = {
+    "impact_level": "HIGH",
+    "affected_resources": ["grpFinance", "appPayroll"],
+    "reason": "Deactivation removes access to finance-critical apps.",
+    "source": "TEST_OVERRIDE",
+}
+
 
 def _dry_run(client, **overrides):
 
@@ -781,3 +795,95 @@ def test_bulk_deactivate_partial_failure_reports_correctly(
 
     assert by_user_id["00uUserBad"]["verified"] is False
     assert by_user_id["00uUserBad"]["current_status"] == "ACTIVE"
+
+
+# --- Impact analysis (Category 7) ---
+
+
+def test_dry_run_defaults_to_impact_engine_unavailable_when_no_impact_service(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(client)
+
+    impact_decision = operation["preview"]["impact_decision"]
+
+    assert impact_decision["source"] == "ENGINE_UNAVAILABLE"
+    assert impact_decision["impact_level"] is None
+    assert impact_decision["affected_resources"] is None
+
+
+def test_dry_run_captures_impact_decision_from_engine(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_impact",
+        lambda *a, **k: IMPACT_DATA,
+    )
+
+    operation = _dry_run(client)
+
+    impact_decision = operation["preview"]["impact_decision"]
+
+    assert impact_decision["impact_level"] == "HIGH"
+    assert impact_decision["affected_resources"] == ["grpFinance", "appPayroll"]
+    assert impact_decision["source"] == "TEST_OVERRIDE"
+
+
+def test_dry_run_records_impact_previewed_timeline_event(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_impact",
+        lambda *a, **k: IMPACT_DATA,
+    )
+
+    _dry_run(
+        client,
+        target_user_id="00uImpactUser",
+        target_user_email="impact.user@example.com",
+    )
+
+    timeline = client.get("/api/timeline/00uImpactUser").json()
+    impact_events = [e for e in timeline if e["event_type"] == "IMPACT_PREVIEWED"]
+
+    assert len(impact_events) == 1
+    assert impact_events[0]["category"] == "IMPACT_ANALYSIS"
+    assert "HIGH" in impact_events[0]["description"]
+    assert "TEST_OVERRIDE" in impact_events[0]["description"]
