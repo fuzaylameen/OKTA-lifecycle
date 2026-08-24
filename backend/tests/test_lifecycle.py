@@ -8,7 +8,14 @@ nothing here reaches OktaClient.request().
 
 import datetime
 
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+
+from app.integrations.impact_engine_client import evaluate_impact
 from app.services import lifecycle_execution_service
+from app.services import impact_service
 from app.db.models_lifecycle import ApprovalRequest
 from tests.conftest import TestSessionLocal
 
@@ -803,6 +810,15 @@ def test_bulk_deactivate_partial_failure_reports_correctly(
 def test_dry_run_defaults_to_impact_engine_unavailable_when_no_impact_service(
     client, mock_okta_backed_services, monkeypatch
 ):
+    """
+    app.services.impact_service now exists (Category 7 is implemented),
+    so the ImportError fallback in impact_engine_client can no longer
+    occur naturally. This test still exercises that fallback path by
+    forcing the import to fail, the same way it would if the module
+    were absent - see impact_engine_client.py's documented contract.
+    """
+
+    import sys
 
     user_mock, _ = mock_okta_backed_services
     user_mock.list_users.return_value = []
@@ -815,6 +831,7 @@ def test_dry_run_defaults_to_impact_engine_unavailable_when_no_impact_service(
         lifecycle_execution_service, "evaluate_risk",
         lambda *a, **k: NO_RISK_DATA,
     )
+    monkeypatch.setitem(sys.modules, "app.services.impact_service", None)
 
     operation = _dry_run(client)
 
@@ -842,7 +859,7 @@ def test_dry_run_captures_impact_decision_from_engine(
     )
     monkeypatch.setattr(
         lifecycle_execution_service, "evaluate_impact",
-        lambda *a, **k: IMPACT_DATA,
+        AsyncMock(return_value=IMPACT_DATA),
     )
 
     operation = _dry_run(client)
@@ -871,7 +888,7 @@ def test_dry_run_records_impact_previewed_timeline_event(
     )
     monkeypatch.setattr(
         lifecycle_execution_service, "evaluate_impact",
-        lambda *a, **k: IMPACT_DATA,
+        AsyncMock(return_value=IMPACT_DATA),
     )
 
     _dry_run(
@@ -887,3 +904,321 @@ def test_dry_run_records_impact_previewed_timeline_event(
     assert impact_events[0]["category"] == "IMPACT_ANALYSIS"
     assert "HIGH" in impact_events[0]["description"]
     assert "TEST_OVERRIDE" in impact_events[0]["description"]
+
+
+# --- impact_service.evaluate() access-preview logic (Category 7) ---
+
+
+def _mock_impact_services(monkeypatch, group_apps=None, user_groups=None):
+    """
+    Replaces impact_service's own group_service/user_service singletons
+    (independent from the ones lifecycle_execution_service uses) with
+    AsyncMocks, so evaluate() never reaches OktaClient.
+
+    group_apps: dict of group_id -> list of app dicts, used as the
+    side_effect for group_service.list_apps(group_id).
+    user_groups: dict of user_id -> list of group dicts, used as the
+    side_effect for user_service.list_user_groups(user_id).
+    """
+
+    group_mock = AsyncMock(name="MockImpactGroupService")
+    user_mock = AsyncMock(name="MockImpactUserService")
+
+    group_apps = group_apps or {}
+    user_groups = user_groups or {}
+
+    group_mock.list_apps.side_effect = (
+        lambda group_id: group_apps.get(group_id, [])
+    )
+    user_mock.list_user_groups.side_effect = (
+        lambda user_id: user_groups.get(user_id, [])
+    )
+
+    monkeypatch.setattr(impact_service, "group_service", group_mock)
+    monkeypatch.setattr(impact_service, "user_service", user_mock)
+
+    return group_mock, user_mock
+
+
+async def test_impact_service_group_move_computes_apps_gained_and_lost(monkeypatch):
+
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={
+            "grpOld": [
+                {"id": "appPayroll", "label": "Payroll"},
+                {"id": "appHR", "label": "HR"},
+            ],
+            "grpNew": [
+                {"id": "appHR", "label": "HR"},
+                {"id": "appFinance", "label": "Finance"},
+            ],
+        },
+    )
+
+    decision = await impact_service.evaluate(
+        "GROUP_MOVE",
+        "00uTargetUser",
+        {"old_group_id": "grpOld", "new_group_id": "grpNew"},
+    )
+
+    by_app = {r["app_id"]: r["change"] for r in decision["affected_resources"]}
+
+    assert by_app == {"appPayroll": "LOST", "appFinance": "GAINED"}
+    assert "appHR" not in by_app
+    assert decision["groups_removed"] == ["grpOld"]
+    assert decision["groups_added"] == ["grpNew"]
+    assert decision["impact_level"] == "MEDIUM"
+
+
+async def test_impact_service_group_move_no_change_is_low_impact(monkeypatch):
+
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={
+            "grpOld": [{"id": "appHR", "label": "HR"}],
+            "grpNew": [{"id": "appHR", "label": "HR"}],
+        },
+    )
+
+    decision = await impact_service.evaluate(
+        "GROUP_MOVE",
+        "00uTargetUser",
+        {"old_group_id": "grpOld", "new_group_id": "grpNew"},
+    )
+
+    assert decision["affected_resources"] == []
+    assert decision["impact_level"] == "LOW"
+
+
+async def test_impact_service_deactivate_identifies_access_to_be_removed(monkeypatch):
+
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={
+            "grp1": [{"id": "appA", "label": "App A"}],
+            "grp2": [{"id": "appB", "label": "App B"}],
+        },
+        user_groups={
+            "00uTargetUser": [{"id": "grp1"}, {"id": "grp2"}],
+        },
+    )
+
+    decision = await impact_service.evaluate(
+        "DEACTIVATE", "00uTargetUser", {}
+    )
+
+    by_app = {r["app_id"]: r["change"] for r in decision["affected_resources"]}
+
+    assert by_app == {"appA": "LOST", "appB": "LOST"}
+    assert set(decision["groups_removed"]) == {"grp1", "grp2"}
+    assert decision["groups_added"] == []
+
+
+async def test_impact_service_delete_identifies_access_to_be_removed(monkeypatch):
+
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={"grp1": [{"id": "appA", "label": "App A"}]},
+        user_groups={"00uTargetUser": [{"id": "grp1"}]},
+    )
+
+    decision = await impact_service.evaluate(
+        "DELETE", "00uTargetUser", {}
+    )
+
+    assert decision["affected_resources"] == [
+        {"app_id": "appA", "app_name": "App A", "change": "LOST"}
+    ]
+
+
+async def test_impact_service_bulk_deactivate_aggregates_across_users(monkeypatch):
+
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={
+            "grp1": [{"id": "appA", "label": "App A"}],
+            "grp2": [{"id": "appB", "label": "App B"}],
+        },
+        user_groups={
+            "00uUserOne": [{"id": "grp1"}],
+            "00uUserTwo": [{"id": "grp2"}],
+        },
+    )
+
+    decision = await impact_service.evaluate(
+        "BULK_DEACTIVATE",
+        None,
+        {"user_ids": ["00uUserOne", "00uUserTwo"]},
+    )
+
+    by_app = {r["app_id"]: r["change"] for r in decision["affected_resources"]}
+
+    assert by_app == {"appA": "LOST", "appB": "LOST"}
+    assert set(decision["groups_removed"]) == {"grp1", "grp2"}
+
+
+async def test_impact_service_create_with_group_assignments_computes_access_gained(
+    monkeypatch,
+):
+
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={
+            "grpNew": [{"id": "appC", "label": "App C"}],
+        },
+    )
+
+    decision = await impact_service.evaluate(
+        "CREATE",
+        None,
+        {"group_ids": ["grpNew"]},
+    )
+
+    assert decision["affected_resources"] == [
+        {"app_id": "appC", "app_name": "App C", "change": "GAINED"}
+    ]
+    assert decision["groups_added"] == ["grpNew"]
+
+
+async def test_impact_service_provision_without_group_assignments_is_no_op(monkeypatch):
+
+    _mock_impact_services(monkeypatch)
+
+    decision = await impact_service.evaluate("PROVISION", "00uTargetUser", {})
+
+    assert decision["affected_resources"] == []
+    assert decision["groups_added"] == []
+    assert decision["impact_level"] == "LOW"
+
+
+async def test_dry_run_group_move_computes_real_access_preview_end_to_end(
+    client, mock_okta_backed_services, monkeypatch
+):
+    """
+    Confirms the full wiring: dry-run -> lifecycle_execution_service ->
+    impact_engine_client -> impact_service, without stubbing out
+    evaluate_impact itself (unlike the other dry-run tests above).
+    """
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+    _mock_impact_services(
+        monkeypatch,
+        group_apps={
+            "grpOld": [{"id": "appPayroll", "label": "Payroll"}],
+            "grpNew": [{"id": "appFinance", "label": "Finance"}],
+        },
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="GROUP_MOVE",
+        payload={"old_group_id": "grpOld", "new_group_id": "grpNew"},
+    )
+
+    impact_decision = operation["preview"]["impact_decision"]
+    by_app = {
+        r["app_id"]: r["change"]
+        for r in impact_decision["affected_resources"]
+    }
+
+    assert impact_decision["source"] == "ENGINE"
+    assert by_app == {"appPayroll": "LOST", "appFinance": "GAINED"}
+
+
+# --- Impact engine Okta-failure fallback (Category 7) ---
+
+
+async def test_evaluate_impact_falls_back_when_okta_call_fails(monkeypatch):
+
+    group_mock = AsyncMock(name="MockImpactGroupService")
+    group_mock.list_apps.side_effect = httpx.HTTPStatusError(
+        "500 Server Error", request=None, response=None
+    )
+
+    monkeypatch.setattr(impact_service, "group_service", group_mock)
+    monkeypatch.setattr(impact_service, "user_service", AsyncMock())
+
+    decision = await evaluate_impact(
+        "GROUP_MOVE",
+        "00uTargetUser",
+        {"old_group_id": "grpOld", "new_group_id": "grpNew"},
+    )
+
+    assert decision["source"] == "ENGINE_ERROR"
+    assert decision["impact_level"] is None
+    assert decision["affected_resources"] is None
+    assert "Okta" in decision["reason"]
+
+
+async def test_dry_run_group_move_returns_200_when_okta_fails_during_impact_analysis(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    group_mock = AsyncMock(name="MockImpactGroupService")
+    group_mock.list_apps.side_effect = httpx.RequestError("connection failed")
+    monkeypatch.setattr(impact_service, "group_service", group_mock)
+    monkeypatch.setattr(impact_service, "user_service", AsyncMock())
+
+    response = client.post(
+        "/api/lifecycle/dry-run",
+        json={
+            "operation_type": "GROUP_MOVE",
+            "requested_by": "requester@example.com",
+            "target_user_id": "00uTargetUser",
+            "target_user_email": "target@example.com",
+            "payload": {"old_group_id": "grpOld", "new_group_id": "grpNew"},
+        },
+    )
+
+    assert response.status_code == 200
+
+    operation = response.json()["operation"]
+
+    assert operation["status"] == "DRY_RUN"
+    assert operation["preview"]["impact_decision"]["source"] == "ENGINE_ERROR"
+    assert operation["preview"]["impact_decision"]["impact_level"] is None
+    assert operation["preview"]["impact_decision"]["affected_resources"] is None
+
+
+async def test_evaluate_impact_does_not_swallow_non_http_errors(monkeypatch):
+    """
+    Guards against over-broad exception handling in the adapter: a bug
+    in the engine itself (not an Okta/network failure) must still
+    propagate rather than being reported as an Okta outage.
+    """
+
+    group_mock = AsyncMock(name="MockImpactGroupService")
+    group_mock.list_apps.side_effect = TypeError("boom - a real bug")
+
+    monkeypatch.setattr(impact_service, "group_service", group_mock)
+    monkeypatch.setattr(impact_service, "user_service", AsyncMock())
+
+    with pytest.raises(TypeError):
+        await evaluate_impact(
+            "GROUP_MOVE",
+            "00uTargetUser",
+            {"old_group_id": "grpOld", "new_group_id": "grpNew"},
+        )

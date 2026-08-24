@@ -128,7 +128,7 @@ async def dry_run(
 
     policy_decision = evaluate_policy(operation_type, target_user_id, payload)
     risk_decision = evaluate_risk(operation_type, target_user_id, payload)
-    impact_decision = evaluate_impact(operation_type, target_user_id, payload)
+    impact_decision = await evaluate_impact(operation_type, target_user_id, payload)
 
     preview_payload = {
         "current_state": current_state,

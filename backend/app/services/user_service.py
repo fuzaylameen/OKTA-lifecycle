@@ -70,6 +70,13 @@ class UserService:
         deprovisioned_users = await self.list_deprovisioned_users()
         return users + deprovisioned_users
 
+    async def list_user_groups(self, user_id):
+
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/users/{user_id}/groups"
+        )
+
 
     async def create_user(self, user_data):
 

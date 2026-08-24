@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 
 from app.db.database import Base, get_db
 from app.services import lifecycle_execution_service
+from app.services import impact_service
 from app.services.okta_client import OktaClient
 
 
@@ -169,6 +170,30 @@ def mock_okta_backed_services(monkeypatch):
     monkeypatch.setattr(lifecycle_execution_service, "group_service", group_mock)
 
     yield user_mock, group_mock
+
+
+@pytest.fixture(autouse=True)
+def mock_impact_service_okta_calls(monkeypatch):
+    """
+    impact_service (Category 7 access-preview engine) keeps its own
+    user_service/group_service singletons, separate from the ones
+    lifecycle_execution_service uses above. Default them to empty
+    results here so every dry-run in the suite gets a real (but
+    no-op) impact_decision unless a test overrides these mocks for
+    its own access-preview scenario - see test_lifecycle.py's
+    _mock_impact_services() helper.
+    """
+
+    group_mock = AsyncMock(name="MockImpactGroupService")
+    user_mock = AsyncMock(name="MockImpactUserService")
+
+    group_mock.list_apps.return_value = []
+    user_mock.list_user_groups.return_value = []
+
+    monkeypatch.setattr(impact_service, "group_service", group_mock)
+    monkeypatch.setattr(impact_service, "user_service", user_mock)
+
+    yield group_mock, user_mock
 
 
 @pytest.fixture

@@ -14,6 +14,13 @@ class GroupService:
             "/api/v1/groups"
         )
 
+    async def list_apps(self, group_id):
+
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/groups/{group_id}/apps"
+        )
+
     async def add_user(
         self,
         group_id,
