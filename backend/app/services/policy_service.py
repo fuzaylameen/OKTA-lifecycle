@@ -51,6 +51,18 @@ RULES = {
         "required_levels": ["MANAGER", "SECURITY"],
         "reason": "Deletion is irreversible and requires manager and security approval.",
     },
+    # Restores access after a prior deactivation - same tier as DEACTIVATE.
+    "REACTIVATE": {
+        "approval_required": True,
+        "required_levels": ["MANAGER"],
+        "reason": "Reactivation restores access and requires manager approval.",
+    },
+    # Does not grant or revoke access - low risk.
+    "PROFILE_UPDATE": {
+        "approval_required": False,
+        "required_levels": [],
+        "reason": "Profile updates do not change access - no approval required.",
+    },
 }
 
 _UNKNOWN_OPERATION_RULE = {

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone, timedelta
 
 from app.services.okta_client import OktaClient
@@ -128,7 +129,7 @@ class UserService:
                 "POST",
                 f"/api/v1/users/{user_id}/lifecycle/activate",
                 params={
-                    "sendEmail": "true"
+                    "sendEmail": "false"
                 }
             )
 
@@ -180,6 +181,143 @@ class UserService:
 
             self._create_log(
                 action="DEACTIVATE_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
+    async def bulk_deactivate(self, user_ids):
+        """
+        Sequentially deactivates each user via the existing, unmodified
+        deactivate_user() (so each one gets its own AuditLog row exactly
+        as a single DEACTIVATE does), and returns the same aggregate
+        shape lifecycle_execution_service._execute() expects.
+        """
+
+        results = []
+
+        for user_id in user_ids:
+
+            try:
+
+                result = await self.deactivate_user(user_id)
+
+                results.append({
+                    "user_id": user_id,
+                    "status": "success",
+                    "result": result
+                })
+
+            except Exception as e:
+
+                results.append({
+                    "user_id": user_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+
+        return {
+            "total": len(user_ids),
+            "successful": sum(1 for r in results if r["status"] == "success"),
+            "failed": sum(1 for r in results if r["status"] == "failed"),
+            "results": results
+        }
+
+    async def reactivate_user(self, user_id):
+        """
+        Reverses a prior DEACTIVATE_USER. deactivate_user() calls
+        /lifecycle/deactivate, which leaves the user DEPROVISIONED in
+        Okta - not SUSPENDED - so /lifecycle/unsuspend does not apply
+        here (it only accepts users currently in SUSPENDED status).
+        Okta's documented way to bring a DEPROVISIONED user back is to
+        call /lifecycle/activate again, the same endpoint
+        provision_user() uses for a brand-new STAGED user. This is
+        still a distinct method with its own audit action so
+        "recovered from deactivation" is never confused with "activated
+        for the first time" in the audit trail / identity timeline.
+        """
+
+        try:
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}/lifecycle/activate",
+                params={
+                    "sendEmail": "true"
+                }
+            )
+
+            self._create_log(
+                action="REACTIVATE_USER",
+                user_id=user_id,
+                old_value="DEACTIVATED",
+                new_value="ACTIVE",
+                status="SUCCESS",
+                message="User reactivated successfully"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="REACTIVATE_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
+    async def update_profile(self, user_id, profile_changes):
+        """
+        Partially updates an Okta user's profile. Reads the current
+        profile first so the audit log captures real before/after
+        values for exactly the fields being changed, not just the
+        fact that something changed.
+        """
+
+        try:
+
+            before = await self.okta.request(
+                "GET",
+                f"/api/v1/users/{user_id}"
+            )
+
+            before_profile = (
+                before.get("profile", {}) if isinstance(before, dict) else {}
+            )
+
+            old_values = {
+                field: before_profile.get(field)
+                for field in profile_changes
+            }
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}",
+                json={
+                    "profile": profile_changes
+                }
+            )
+
+            self._create_log(
+                action="UPDATE_PROFILE",
+                user_id=user_id,
+                old_value=json.dumps(old_values),
+                new_value=json.dumps(profile_changes),
+                status="SUCCESS",
+                message="User profile updated successfully"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="UPDATE_PROFILE",
                 user_id=user_id,
                 status="FAILED",
                 message=str(e)

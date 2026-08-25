@@ -57,10 +57,11 @@ class OktaClient:
         # Create JWT client assertion
         assertion = self._create_client_assertion()
 
+        # OAuth token request data
         data = {
             "grant_type": "client_credentials",
 
-            "scope": "okta.users.read",
+            "scope": "okta.users.read okta.users.manage",
 
             "client_assertion_type":
                 "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",

@@ -32,7 +32,9 @@ SUPPORTED_OPERATIONS = {
     "DEACTIVATE",
     "BULK_DEACTIVATE",
     "DELETE",
-    "GROUP_MOVE"
+    "GROUP_MOVE",
+    "REACTIVATE",
+    "PROFILE_UPDATE"
 }
 
 OPERATION_TIMELINE_CATEGORY = {
@@ -41,7 +43,9 @@ OPERATION_TIMELINE_CATEGORY = {
     "DEACTIVATE": "SUSPENSION",
     "BULK_DEACTIVATE": "SUSPENSION",
     "DELETE": "OFFBOARDING",
-    "GROUP_MOVE": "ACCESS_CHANGE"
+    "GROUP_MOVE": "ACCESS_CHANGE",
+    "REACTIVATE": "REACTIVATION",
+    "PROFILE_UPDATE": "PROFILE_CHANGE"
 }
 
 
@@ -74,6 +78,15 @@ def _describe_proposed_change(operation_type, payload):
             "action": "MOVE_GROUP",
             "old_group_id": payload.get("old_group_id"),
             "new_group_id": payload.get("new_group_id")
+        }
+
+    if operation_type == "REACTIVATE":
+        return {"action": "REACTIVATE_USER"}
+
+    if operation_type == "PROFILE_UPDATE":
+        return {
+            "action": "UPDATE_PROFILE",
+            "profile_changes": payload.get("profile_changes", {})
         }
 
     return {}
@@ -376,6 +389,15 @@ async def _execute(db, operation):
                 payload.get("new_group_id")
             )
 
+        elif operation.operation_type == "REACTIVATE":
+            result = await user_service.reactivate_user(operation.target_user_id)
+
+        elif operation.operation_type == "PROFILE_UPDATE":
+            result = await user_service.update_profile(
+                operation.target_user_id,
+                payload.get("profile_changes", {})
+            )
+
         else:
             raise LifecycleOperationError(
                 f"Unsupported operation_type: {operation.operation_type}"
@@ -417,6 +439,13 @@ async def _execute(db, operation):
     db.commit()
     db.refresh(operation)
 
+    old_value = None
+    new_value = None
+
+    if operation.operation_type == "GROUP_MOVE":
+        old_value = payload.get("old_group_id")
+        new_value = payload.get("new_group_id")
+
     record_event(
         db,
         event_category=OPERATION_TIMELINE_CATEGORY.get(
@@ -426,6 +455,8 @@ async def _execute(db, operation):
         identity_user_id=operation.target_user_id,
         identity_email=operation.target_user_email,
         description=f"Executed {operation.operation_type}",
+        old_value=old_value,
+        new_value=new_value,
         related_operation_id=operation.id,
         related_approval_id=operation.approval_request_id
     )

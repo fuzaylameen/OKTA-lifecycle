@@ -18,6 +18,7 @@ from app.integrations.policy_engine_client import evaluate_policy
 from app.services import lifecycle_execution_service
 from app.services import impact_service
 from app.services import policy_service
+from app.services.user_service import UserService
 from app.db.models_lifecycle import ApprovalRequest
 from tests.conftest import TestSessionLocal
 
@@ -1238,6 +1239,8 @@ async def test_evaluate_impact_does_not_swallow_non_http_errors(monkeypatch):
         ("DEACTIVATE", True, ["MANAGER"]),
         ("BULK_DEACTIVATE", True, ["MANAGER", "SECURITY"]),
         ("DELETE", True, ["MANAGER", "SECURITY"]),
+        ("REACTIVATE", True, ["MANAGER"]),
+        ("PROFILE_UPDATE", False, []),
     ],
 )
 def test_policy_service_static_rules_per_operation_type(
@@ -1335,3 +1338,256 @@ def test_dry_run_create_computes_real_policy_decision_end_to_end(
     assert policy_decision["source"] == "ENGINE"
     assert policy_decision["approval_required"] is False
     assert policy_decision["required_levels"] == []
+
+
+# --- Feature 11: Identity Timeline gap closures ---
+# (BULK_DEACTIVATE fix, REACTIVATE, PROFILE_UPDATE, GROUP_MOVE enrichment)
+
+
+async def test_user_service_bulk_deactivate_calls_deactivate_per_user(monkeypatch):
+    """
+    Direct unit test against the real UserService.bulk_deactivate(),
+    not the AsyncMock used elsewhere in this suite - this is what
+    actually proves the production bug (UserService had no
+    bulk_deactivate method at all) is fixed, since the lifecycle-level
+    tests only ever exercised the mock.
+    """
+
+    service = UserService()
+
+    calls = []
+
+    async def fake_deactivate_user(user_id):
+        calls.append(user_id)
+        if user_id == "00uUserBad":
+            raise RuntimeError("Okta error")
+        return {"id": user_id, "status": "DEPROVISIONED"}
+
+    monkeypatch.setattr(service, "deactivate_user", fake_deactivate_user)
+
+    result = await service.bulk_deactivate(["00uUserGood", "00uUserBad"])
+
+    assert calls == ["00uUserGood", "00uUserBad"]
+    assert result["total"] == 2
+    assert result["successful"] == 1
+    assert result["failed"] == 1
+
+    by_user = {r["user_id"]: r for r in result["results"]}
+    assert by_user["00uUserGood"]["status"] == "success"
+    assert by_user["00uUserBad"]["status"] == "failed"
+    assert "Okta error" in by_user["00uUserBad"]["error"]
+
+
+def test_bulk_deactivate_lifecycle_flow_uses_real_method_shape(
+    client, mock_okta_backed_services, monkeypatch
+):
+    """
+    End-to-end confirmation that the BULK_DEACTIVATE lifecycle path
+    still works now that UserService.bulk_deactivate is a real method
+    (the mock's return_value shape matches what the real method now
+    actually returns, verified separately above).
+    """
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="BULK_DEACTIVATE",
+        target_user_id=None,
+        target_user_email=None,
+        payload={"user_ids": ["00uBulkOne", "00uBulkTwo"]},
+    )
+
+    confirmed = client.post(f"/api/lifecycle/{operation['id']}/confirm").json()["operation"]
+
+    assert confirmed["status"] == "EXECUTED"
+    user_mock.bulk_deactivate.assert_awaited_once_with(["00uBulkOne", "00uBulkTwo"])
+
+
+def test_reactivate_dry_run_confirm_execute(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = [
+        {"id": "00uReactivateUser", "status": "DEPROVISIONED"}
+    ]
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="REACTIVATE",
+        target_user_id="00uReactivateUser",
+        target_user_email="reactivate.user@example.com",
+    )
+
+    assert operation["preview"]["current_state"]["status"] == "DEPROVISIONED"
+    assert operation["preview"]["proposed_change"]["action"] == "REACTIVATE_USER"
+
+    confirmed = client.post(f"/api/lifecycle/{operation['id']}/confirm").json()["operation"]
+
+    assert confirmed["status"] == "EXECUTED"
+    user_mock.reactivate_user.assert_awaited_once_with("00uReactivateUser")
+
+
+def test_reactivate_appears_on_timeline_with_reactivation_category(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="REACTIVATE",
+        target_user_id="00uReactivateTimeline",
+        target_user_email="reactivate.timeline@example.com",
+    )
+
+    client.post(f"/api/lifecycle/{operation['id']}/confirm")
+
+    timeline = client.get("/api/timeline/00uReactivateTimeline").json()
+
+    executed_events = [e for e in timeline if e["event_type"] == "OPERATION_EXECUTED"]
+
+    assert len(executed_events) == 1
+    assert executed_events[0]["category"] == "REACTIVATION"
+
+
+def test_profile_update_dry_run_confirm_execute(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="PROFILE_UPDATE",
+        target_user_id="00uProfileUser",
+        target_user_email="profile.user@example.com",
+        payload={"profile_changes": {"lastName": "NewLastName"}},
+    )
+
+    assert operation["preview"]["proposed_change"]["action"] == "UPDATE_PROFILE"
+    assert operation["preview"]["proposed_change"]["profile_changes"] == {
+        "lastName": "NewLastName"
+    }
+
+    confirmed = client.post(f"/api/lifecycle/{operation['id']}/confirm").json()["operation"]
+
+    assert confirmed["status"] == "EXECUTED"
+    user_mock.update_profile.assert_awaited_once_with(
+        "00uProfileUser", {"lastName": "NewLastName"}
+    )
+
+
+def test_profile_update_appears_on_timeline_with_profile_change_category(
+    client, mock_okta_backed_services, monkeypatch
+):
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="PROFILE_UPDATE",
+        target_user_id="00uProfileTimeline",
+        target_user_email="profile.timeline@example.com",
+        payload={"profile_changes": {"lastName": "Changed"}},
+    )
+
+    client.post(f"/api/lifecycle/{operation['id']}/confirm")
+
+    timeline = client.get("/api/timeline/00uProfileTimeline").json()
+
+    executed_events = [e for e in timeline if e["event_type"] == "OPERATION_EXECUTED"]
+
+    assert len(executed_events) == 1
+    assert executed_events[0]["category"] == "PROFILE_CHANGE"
+
+
+def test_group_move_timeline_event_carries_old_and_new_group_ids(
+    client, mock_okta_backed_services, monkeypatch
+):
+    """
+    Requirement 4 (role/access-change history): GROUP_MOVE is the
+    mechanism. This confirms the executed timeline event itself carries
+    which groups changed, not just that "something" was executed.
+    """
+
+    user_mock, _ = mock_okta_backed_services
+    user_mock.list_users.return_value = []
+
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_policy",
+        lambda *a, **k: APPROVAL_NOT_REQUIRED_POLICY,
+    )
+    monkeypatch.setattr(
+        lifecycle_execution_service, "evaluate_risk",
+        lambda *a, **k: NO_RISK_DATA,
+    )
+
+    operation = _dry_run(
+        client,
+        operation_type="GROUP_MOVE",
+        target_user_id="00uGroupMoveTimeline",
+        target_user_email="group.move.timeline@example.com",
+        payload={"old_group_id": "grpEngineering", "new_group_id": "grpSales"},
+    )
+
+    client.post(f"/api/lifecycle/{operation['id']}/confirm")
+
+    timeline = client.get("/api/timeline/00uGroupMoveTimeline").json()
+
+    executed_events = [e for e in timeline if e["event_type"] == "OPERATION_EXECUTED"]
+
+    assert len(executed_events) == 1
+    assert executed_events[0]["category"] == "ACCESS_CHANGE"
+    assert executed_events[0]["old_value"] == "grpEngineering"
+    assert executed_events[0]["new_value"] == "grpSales"

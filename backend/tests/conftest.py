@@ -135,6 +135,16 @@ def _make_user_service_mock():
         "results": [],
     }
 
+    mock.reactivate_user.return_value = {
+        "id": "00uMockReactivatedUser",
+        "status": "PROVISIONED",
+    }
+
+    mock.update_profile.return_value = {
+        "id": "00uMockUpdatedUser",
+        "status": "ACTIVE",
+    }
+
     return mock
 
 
