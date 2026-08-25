@@ -53,3 +53,56 @@ class AuditLog(Base):
         DateTime,
         default=datetime.utcnow
     )
+
+
+class AuthzAuditLog(Base):
+
+    __tablename__ = "authz_audit_logs"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    requester_id = Column(
+        String(100),
+        nullable=False,
+        index=True
+    )
+
+    requester_role = Column(
+        String(50),
+        nullable=False
+    )
+
+    action = Column(
+        String(100),
+        nullable=False
+    )
+
+    target_id = Column(
+        String(100),
+        nullable=True,
+        index=True
+    )
+
+    decision = Column(
+        String(20),
+        nullable=False
+    )
+
+    policy_name = Column(
+        String(100),
+        nullable=True
+    )
+
+    reason = Column(
+        Text,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
