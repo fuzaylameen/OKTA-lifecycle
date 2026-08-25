@@ -199,8 +199,57 @@ def test_policy_7_privileged_user_protection():
         requester=admin,
         action="suspend",
         target_id="op_1",
-        target_role=Role.OPERATOR,
+        target_role=Role.AUDITOR,
         reason="Normal administrative suspension"
     )
     decision = policy_engine.evaluate(context_admin_op)
     assert decision.allowed is True
+
+
+def test_policy_8_protected_identity_groups():
+    admin = AuthContext(user_id="admin_1", role=Role.ADMIN)
+    manager = AuthContext(user_id="mgr_1", role=Role.MANAGER)
+    role_mgr = AuthContext(user_id="rm_1", role=Role.ROLE_MANAGER)
+
+    # Manager attempting to move user to Identity-Admin -> DENY
+    context_move_to_admin = PolicyContext(
+        requester=manager,
+        action="group_manage",
+        target_id="u1",
+        attributes={"old_group": "Sales", "new_group": "Identity-Admin"}
+    )
+    decision = policy_engine.evaluate(context_move_to_admin)
+    assert decision.allowed is False
+    assert decision.policy_name == "protected_identity_group_policy"
+    assert "Identity-Admin" in decision.reason or "identity-admin" in decision.reason
+
+    # Admin attempting to modify Identity-Managers -> DENY
+    context_admin_modify = PolicyContext(
+        requester=admin,
+        action="group_manage",
+        target_id="u2",
+        attributes={"old_group": "Identity-Managers", "new_group": "Engineering"}
+    )
+    decision = policy_engine.evaluate(context_admin_modify)
+    assert decision.allowed is False
+
+    # RoleManager attempting to modify Identity-Role-Managers -> DENY
+    context_rm_modify = PolicyContext(
+        requester=role_mgr,
+        action="group_manage",
+        target_id="u3",
+        attributes={"group_name": "Identity-Role-Managers"}
+    )
+    decision = policy_engine.evaluate(context_rm_modify)
+    assert decision.allowed is False
+
+    # Normal group move between non-protected groups -> ALLOW
+    context_normal_move = PolicyContext(
+        requester=manager,
+        action="group_manage",
+        target_id="u4",
+        attributes={"old_group": "Engineering", "new_group": "Product"}
+    )
+    decision = policy_engine.evaluate(context_normal_move)
+    assert decision.allowed is True
+

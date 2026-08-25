@@ -21,15 +21,20 @@ router = APIRouter(
 service = UserService()
 
 
-def _resolve_target_role(role_header: Optional[str] = None, role_query: Optional[str] = None) -> Optional[Role]:
-    """Helper to resolve target user role from request context if supplied."""
-    candidate = role_header or role_query
-    if candidate:
-        try:
-            return parse_role(candidate)
-        except ValueError:
-            return None
-    return None
+async def _resolve_target_role(user_id: str) -> Optional[Role]:
+    """Auto-resolve target user's role from their Okta group membership using user_id."""
+    try:
+        groups = await service.get_user_groups(user_id)
+        group_names = []
+        if isinstance(groups, list):
+            for g in groups:
+                p = g.get("profile", {})
+                name = p.get("name") or g.get("name")
+                if name:
+                    group_names.append(name)
+        return resolve_role_from_okta_groups(group_names)
+    except Exception:
+        return None
 
 
 @router.get("/")
@@ -108,12 +113,11 @@ async def suspend_user(
     user_id: str,
     request: SuspendRequest,
     current_user: AuthContext = Depends(require_permission(Permission.USER_SUSPEND)),
-    x_target_role: Optional[str] = Header(None, alias="X-Target-Role"),
-    target_role: Optional[str] = Query(None)
 ):
-    resolved_target_role = _resolve_target_role(x_target_role, target_role)
+    # Auto-resolve target user's role directly from their Okta group membership
+    resolved_target_role = await _resolve_target_role(user_id)
 
-    # Enforce contextual policies (e.g. Policy 2, Policy 4, Policy 7)
+    # Enforce contextual policies (e.g. Policy 2: Manager cannot suspend Admin, Policy 4: Reason check, Policy 7)
     evaluate_and_enforce_policy(
         requester=current_user,
         action="suspend",
@@ -147,10 +151,8 @@ async def suspend_user(
 async def reactivate_user(
     user_id: str,
     current_user: AuthContext = Depends(require_permission(Permission.USER_REACTIVATE)),
-    x_target_role: Optional[str] = Header(None, alias="X-Target-Role"),
-    target_role: Optional[str] = Query(None)
 ):
-    resolved_target_role = _resolve_target_role(x_target_role, target_role)
+    resolved_target_role = await _resolve_target_role(user_id)
 
     evaluate_and_enforce_policy(
         requester=current_user,
@@ -181,10 +183,8 @@ async def reactivate_user(
 async def deactivate_user(
     user_id: str,
     current_user: AuthContext = Depends(require_permission(Permission.USER_DEPROVISION)),
-    x_target_role: Optional[str] = Header(None, alias="X-Target-Role"),
-    target_role: Optional[str] = Query(None)
 ):
-    resolved_target_role = _resolve_target_role(x_target_role, target_role)
+    resolved_target_role = await _resolve_target_role(user_id)
 
     # Enforce Policies (Policy 1: Self-deprovision, Policy 2: Manager->Admin, Policy 3: Manager->Manager/Admin, Policy 7)
     evaluate_and_enforce_policy(
@@ -217,10 +217,8 @@ async def deactivate_user(
 async def delete_user(
     user_id: str,
     current_user: AuthContext = Depends(require_permission(Permission.USER_DEPROVISION)),
-    x_target_role: Optional[str] = Header(None, alias="X-Target-Role"),
-    target_role: Optional[str] = Query(None)
 ):
-    resolved_target_role = _resolve_target_role(x_target_role, target_role)
+    resolved_target_role = await _resolve_target_role(user_id)
 
     # Enforce Policies (Policy 1: Self-deprovision, Policy 2: Manager->Admin, Policy 3: Manager->Manager/Admin, Policy 7)
     evaluate_and_enforce_policy(
@@ -254,10 +252,8 @@ async def assign_user_role(
     user_id: str,
     request: RoleAssignRequest,
     current_user: AuthContext = Depends(require_permission(Permission.ROLE_MANAGE)),
-    x_target_role: Optional[str] = Header(None, alias="X-Target-Role"),
-    target_role: Optional[str] = Query(None)
 ):
-    resolved_target_role = _resolve_target_role(x_target_role, target_role)
+    resolved_target_role = await _resolve_target_role(user_id)
 
     try:
         new_role_enum = parse_role(request.role)
@@ -282,6 +278,7 @@ async def assign_user_role(
         "user_id": user_id,
         "new_role": new_role_enum.value
     }
+
 
 
 # ============================================================

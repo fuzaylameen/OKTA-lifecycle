@@ -218,6 +218,36 @@ class UserService:
             f"/api/v1/users/{user_id}"
         )
 
+    async def get_user_by_email(self, email: str):
+        """
+        Retrieve an Okta user by email address or login.
+        """
+        try:
+            return await self.okta.request(
+                "GET",
+                f"/api/v1/users/{email}"
+            )
+        except Exception:
+            # Fallback search query
+            users = await self.okta.request(
+                "GET",
+                "/api/v1/users",
+                params={"filter": f'profile.email eq "{email}"'}
+            )
+            if users and len(users) > 0:
+                return users[0]
+            raise
+
+    async def get_user_groups(self, user_id: str):
+        """
+        Retrieve all Okta groups assigned to a user.
+        """
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/users/{user_id}/groups"
+        )
+
+
     async def suspend_user(self, user_id, reason=None):
 
         try:

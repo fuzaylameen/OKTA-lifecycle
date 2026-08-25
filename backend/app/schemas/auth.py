@@ -12,9 +12,7 @@ class Token(BaseModel):
 
 
 class TokenRequest(BaseModel):
-    user_id: str = Field(..., description="Unique User/Requester ID")
-    email: str = Field(..., description="User email address")
-    role: str = Field(..., description="Viewer, Operator, Manager, or Admin")
+    email: str = Field(..., description="User email address registered in Okta directory")
 
 
 class SuspendRequest(BaseModel):
@@ -22,4 +20,5 @@ class SuspendRequest(BaseModel):
 
 
 class RoleAssignRequest(BaseModel):
-    role: str = Field(..., description="Target role to assign (Viewer, Operator, Manager, Admin)")
+    role: str = Field(..., description="Target role to assign (Auditor, Manager, Admin, RoleManager)")
+

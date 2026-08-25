@@ -160,3 +160,41 @@ class PrivilegedUserProtectionPolicy(BasePolicy):
                 )
 
         return PolicyDecision.allow()
+
+
+PROTECTED_IDENTITY_GROUPS: Set[str] = {
+    "identity-auditors",
+    "identity-managers",
+    "identity-admin",
+    "identity-role-managers",
+}
+
+
+class ProtectedIdentityGroupPolicy(BasePolicy):
+    """
+    Policy 8 — Protected Identity Group Policy
+    Prevents protected Identity groups (Identity-Auditors, Identity-Managers, Identity-Admin,
+    Identity-Role-Managers) from being modified through application group management operations.
+    """
+    name = "protected_identity_group_policy"
+
+    def evaluate(self, context: PolicyContext) -> PolicyDecision:
+        if context.action in {"group_manage", "group_modify", "move_user", "group_update", "delete_group", "add_to_group", "remove_from_group"}:
+            targets_to_check = []
+            if "old_group" in context.attributes and context.attributes["old_group"]:
+                targets_to_check.append(str(context.attributes["old_group"]).strip().lower())
+            if "new_group" in context.attributes and context.attributes["new_group"]:
+                targets_to_check.append(str(context.attributes["new_group"]).strip().lower())
+            if "group_name" in context.attributes and context.attributes["group_name"]:
+                targets_to_check.append(str(context.attributes["group_name"]).strip().lower())
+            if context.target_id:
+                targets_to_check.append(str(context.target_id).strip().lower())
+
+            for target in targets_to_check:
+                if target in PROTECTED_IDENTITY_GROUPS:
+                    return PolicyDecision.deny(
+                        self.name,
+                        f"Modifications to protected Identity group '{target}' are strictly prohibited for all application roles."
+                    )
+        return PolicyDecision.allow()
+
