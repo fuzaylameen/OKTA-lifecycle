@@ -1,10 +1,13 @@
 import csv
 import io
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.services.user_service import UserService
+from app.authorization.permissions import Permission
+from app.authorization.models import AuthContext
+from app.authorization.dependencies import require_permission
 
 
 router = APIRouter(
@@ -16,8 +19,9 @@ service = UserService()
 
 
 @router.get("/users.csv")
-async def export_users():
-
+async def export_users(
+    current_user: AuthContext = Depends(require_permission(Permission.USER_READ))
+):
     users = await service.list_users()
 
     output = io.StringIO()
@@ -34,7 +38,6 @@ async def export_users():
     ])
 
     for user in users:
-
         profile = user.get("profile", {})
 
         writer.writerow([

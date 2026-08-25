@@ -211,6 +211,75 @@ class UserService:
 
             raise
 
+    async def get_user(self, user_id):
+
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/users/{user_id}"
+        )
+
+    async def suspend_user(self, user_id, reason=None):
+
+        try:
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}/lifecycle/suspend"
+            )
+
+            self._create_log(
+                action="SUSPEND_USER",
+                user_id=user_id,
+                old_value="ACTIVE",
+                new_value="SUSPENDED",
+                status="SUCCESS",
+                message=f"User suspended. Reason: {reason}" if reason else "User suspended"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="SUSPEND_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
+    async def reactivate_user(self, user_id):
+
+        try:
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}/lifecycle/unsuspend"
+            )
+
+            self._create_log(
+                action="REACTIVATE_USER",
+                user_id=user_id,
+                old_value="SUSPENDED",
+                new_value="ACTIVE",
+                status="SUCCESS",
+                message="User reactivated successfully"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="REACTIVATE_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
     # ============================================================
     # PASSWORD EXPIRY
     # ============================================================
