@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import {
-  lifecycleDryRun, confirmLifecycle, cancelLifecycle, verifyLifecycle,
-  listAllUsers, listGroups
+  lifecycleDryRun, confirmLifecycle, cancelLifecycle, verifyLifecycle
 } from '../api/client';
 import RotateMark from '../components/RotateMark';
 import PolicyViolationModal from '../components/PolicyViolationModal';
 import {
-  PlayCircle, CheckCircle2, AlertTriangle, XCircle, ArrowRight,
-  ShieldAlert, RefreshCw, FileText, Check, Layers, UserCheck
+  CheckCircle2, ArrowRight, Check
 } from 'lucide-react';
 import './LifecycleExecution.css';
 

@@ -41,13 +41,6 @@ function Navbar() {
           ))}
         </div>
 
-        {/* Right: Live Status Badge */}
-        <div className="nav-right">
-          <div className="status-pill">
-            <span className="status-pulse-dot" />
-            <span className="status-pill-text">Okta Engine</span>
-          </div>
-        </div>
       </nav>
     </header>
   );

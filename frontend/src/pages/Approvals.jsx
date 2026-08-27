@@ -3,8 +3,7 @@ import { getCurrentUser, listApprovals, approveRequest, rejectRequest, escalateR
 import RotateMark from '../components/RotateMark';
 import PolicyViolationModal from '../components/PolicyViolationModal';
 import {
-  CheckSquare, Check, X, ArrowUpRight, Search,
-  Clock, Shield, User, AlertCircle, RefreshCw
+  Check, X, ArrowUpRight, Search, RefreshCw
 } from 'lucide-react';
 import './Approvals.css';
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { listAllUsers, listDeprovisionedUsers, listLogs } from '../api/client';
 import RotateMark from '../components/RotateMark';
 import {
-  Users, UserX, Clock, AlertCircle, CheckCircle2, ShieldCheck,
+  Users, UserX, Clock, CheckCircle2, ShieldCheck,
   ArrowUpRight, ShieldAlert, Layers, Shield
 } from 'lucide-react';
 import { Link } from 'react-router-dom';

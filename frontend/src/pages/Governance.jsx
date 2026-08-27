@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import RotateMark from '../components/RotateMark';
-import { Shield, CheckCircle2, AlertTriangle, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import './Governance.css';
 
 // ── 7-Policy Engine Definitions ───────────────────────────────────────────────

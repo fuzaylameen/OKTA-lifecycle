@@ -2,14 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   getUserById, getUserPasswordExpiry, expireUserPassword,
-  provisionUser, deactivateUser, deleteUser, getUserTimeline, listGroups
+  provisionUser, deactivateUser, deleteUser, getUserTimeline
 } from '../api/client';
 import RotateMark from '../components/RotateMark';
 import PolicyViolationModal from '../components/PolicyViolationModal';
 import {
   ArrowLeft, Shield, User, Key, Clock, Zap, UserMinus,
-  Trash2, Lock, AlertCircle, CheckCircle2, RefreshCw,
-  Calendar, Layers, Check, ChevronRight
+  Trash2, Lock, AlertCircle, Check, RefreshCw
 } from 'lucide-react';
 import './UserDetails.css';
 

@@ -48,10 +48,11 @@ function OnboardOffboard() {
     setError(''); setLoading(true);
     try {
       const result = await createUser({
-        firstName: form.firstName,
-        lastName:  form.lastName,
-        email:     form.email,
-        login:     form.login || form.email,
+        first_name: form.firstName,
+        last_name:  form.lastName,
+        email:      form.email,
+        // Note: backend UserCreate schema only accepts first_name, last_name, email
+        // Login is set to email automatically by the Okta client
       });
       const userId = result?.user?.id || result?.id || '';
       setCreatedId(userId);

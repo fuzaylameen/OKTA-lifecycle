@@ -101,10 +101,11 @@ function CreateUserModal({ onClose, onCreated }) {
     setError('');
     try {
       await createUser({
-        firstName: form.firstName, lastName: form.lastName,
-        email: form.email, login: form.login || form.email,
-        department: form.department || undefined,
-        title: form.title || undefined,
+        first_name: form.firstName,
+        last_name:  form.lastName,
+        email:      form.email,
+        // Note: backend only accepts first_name, last_name, email
+        // login defaults to email, department/title are not in the schema
       });
       onCreated();
       onClose();
