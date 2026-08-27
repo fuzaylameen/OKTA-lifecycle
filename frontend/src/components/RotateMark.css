@@ -1,0 +1,32 @@
+/* ============================================================
+   RotateMark — Silky Smooth 60fps Animation
+   ============================================================ */
+
+.rotate-mark-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+  cursor: pointer;
+}
+
+.rotate-mark-svg {
+  display: block;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* Continuous 360° spin applied cleanly to the inner SVG */
+.rotate-mark-container.spinning .rotate-mark-svg {
+  animation: rm-spin-smooth 2.8s linear infinite;
+}
+
+@keyframes rm-spin-smooth {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}

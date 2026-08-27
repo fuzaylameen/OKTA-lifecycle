@@ -1,0 +1,77 @@
+/* ============================================================
+   Audit Log Page Styling
+   ============================================================ */
+
+.audit-page {
+  animation: fadeIn 0.25s ease;
+}
+
+.audit-log-row {
+  animation: smoothRowEntrance 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: var(--row-delay, 0ms);
+  opacity: 0;
+  transition: background-color var(--transition-fast);
+}
+
+.audit-log-row:hover td {
+  background: rgba(0, 0, 0, 0.028) !important;
+}
+
+@keyframes smoothRowEntrance {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.truncate-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 200px;
+}
+
+.policy-chip {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(22, 98, 221, 0.07);
+  border: 1px solid rgba(22, 98, 221, 0.18);
+  border-radius: 4px;
+  color: var(--mark-color-a);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Log detail modal */
+.log-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.log-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: var(--bg-panel-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.log-detail-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.log-detail-val {
+  font-size: 13px;
+  color: var(--text-primary);
+  word-break: break-all;
+}

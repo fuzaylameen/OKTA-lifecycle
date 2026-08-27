@@ -1,0 +1,129 @@
+/* ============================================================
+   Top Floating Pill Navigation Bar (Bigger, Premium Style)
+   ============================================================ */
+
+.top-navbar-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 20px 32px 12px;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  pointer-events: none;
+}
+
+.top-navbar-pill {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 1360px;
+  height: 68px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 9999px;
+  padding: 0 24px 0 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all var(--transition-base);
+}
+
+.top-navbar-pill:hover {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12), 0 3px 8px rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Brand */
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  padding: 8px 16px 8px 8px;
+  border-radius: 9999px;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.nav-brand:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.nav-brand-name {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--mark-color-a), var(--mark-color-b));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Navigation Links */
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 9999px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.nav-item.active {
+  color: var(--mark-color-a);
+  background: rgba(22, 98, 221, 0.1);
+  font-weight: 700;
+}
+
+/* Right status */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  background: rgba(22, 163, 74, 0.09);
+  border: 1px solid rgba(22, 163, 74, 0.24);
+  border-radius: 9999px;
+}
+
+.status-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-success);
+  box-shadow: 0 0 10px rgba(22, 163, 74, 0.7);
+  animation: pulse 2s infinite ease-in-out;
+}
+
+.status-pill-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--status-success);
+  letter-spacing: 0.02em;
+}

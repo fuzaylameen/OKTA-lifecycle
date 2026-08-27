@@ -1,0 +1,72 @@
+/* ============================================================
+   Policy Violation Modal Styling
+   ============================================================ */
+
+.policy-modal {
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  box-shadow: 0 16px 40px rgba(220, 38, 38, 0.12), var(--shadow-lg);
+}
+
+.policy-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.policy-modal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 9999px;
+  color: var(--status-danger);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.policy-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.policy-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.policy-item-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.policy-name {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--status-danger);
+  background: rgba(220, 38, 38, 0.06);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  word-break: break-all;
+}
+
+.policy-item-reason {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  background: var(--bg-panel-alt);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
