@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import Base, engine
 
 from app.routers import (
+    auth,
     users,
     groups,
     logs,
@@ -17,8 +18,8 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="IntelliID API",
-    description="Intelligent Identity Lifecycle Orchestrator",
-    version="1.0.0"
+    description="Intelligent Identity Lifecycle Orchestrator with JWT RBAC & Policies",
+    version="1.1.0"
 )
 
 
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 
+app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(groups.router)
 app.include_router(logs.router)
