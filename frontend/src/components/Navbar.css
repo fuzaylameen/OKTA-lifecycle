@@ -95,35 +95,47 @@
   font-weight: 700;
 }
 
-/* Right status */
+/* Right status & auth */
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.status-pill {
+.nav-user-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 16px;
-  background: rgba(22, 163, 74, 0.09);
-  border: 1px solid rgba(22, 163, 74, 0.24);
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border-subtle);
   border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-.status-pulse-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--status-success);
-  box-shadow: 0 0 10px rgba(22, 163, 74, 0.7);
-  animation: pulse 2s infinite ease-in-out;
-}
-
-.status-pill-text {
-  font-size: 13px;
+.nav-user-role {
+  color: var(--mark-color-a);
   font-weight: 700;
-  color: var(--status-success);
-  letter-spacing: 0.02em;
+}
+
+.nav-logout-btn {
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel-alt);
+  transition: all var(--transition-fast);
+}
+
+.nav-logout-btn:hover {
+  color: var(--status-danger);
+  border-color: rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.08);
 }

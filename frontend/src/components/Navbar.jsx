@@ -1,23 +1,35 @@
-import { NavLink } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import RotateMark from './RotateMark';
+import { getCurrentUser, logout } from '../api/client';
 import {
   LayoutDashboard, Users, ShieldCheck, FileText,
-  UserCheck, AlertTriangle, PlayCircle, CheckSquare
+  UserCheck, AlertTriangle, LogOut, User
 } from 'lucide-react';
 import './Navbar.css';
 
 const NAV_ITEMS = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/users',     icon: Users,           label: 'Users' },
-  { to: '/groups',    icon: ShieldCheck,     label: 'Access & Groups' },
-  { to: '/lifecycle', icon: PlayCircle,      label: 'Lifecycle' },
-  { to: '/approvals', icon: CheckSquare,     label: 'Approvals' },
-  { to: '/governance',icon: AlertTriangle,   label: 'Governance' },
-  { to: '/audit',     icon: FileText,        label: 'Audit Log' },
-  { to: '/onboard',   icon: UserCheck,       label: 'Onboard Wizard' },
+  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/users',      icon: Users,           label: 'Users' },
+  { to: '/groups',     icon: ShieldCheck,     label: 'Access & Groups' },
+  { to: '/governance', icon: AlertTriangle,   label: 'Governance' },
+  { to: '/audit',      icon: FileText,        label: 'Audit Log' },
+  { to: '/onboard',    icon: UserCheck,       label: 'Onboard Wizard' },
 ];
 
 function Navbar() {
+  const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    getCurrentUser().then(setCurrentUser);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
     <header className="top-navbar-wrapper">
       <nav className="top-navbar-pill">
@@ -41,6 +53,23 @@ function Navbar() {
           ))}
         </div>
 
+        {/* Right: User Profile & Logout */}
+        <div className="nav-right">
+          {currentUser && (
+            <div className="nav-user-badge" title={currentUser.email}>
+              <User size={13} />
+              <span className="nav-user-role">{currentUser.role || 'User'}</span>
+            </div>
+          )}
+          <button
+            className="btn-icon nav-logout-btn"
+            onClick={handleLogout}
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <LogOut size={15} />
+          </button>
+        </div>
       </nav>
     </header>
   );

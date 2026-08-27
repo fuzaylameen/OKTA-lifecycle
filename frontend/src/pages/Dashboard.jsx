@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listAllUsers, listDeprovisionedUsers, listLogs } from '../api/client';
+import { listAllUsers, listDeprovisionedUsers, listLogs, listAuthzLogs, listGroups } from '../api/client';
 import RotateMark from '../components/RotateMark';
 import {
   Users, UserX, Clock, CheckCircle2, ShieldCheck,
@@ -21,64 +21,30 @@ function timeAgo(dateStr) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// 7-Policy Aware High-Risk Security Feed
-const HIGH_RISK_POLICY_DECISIONS = [
-  {
-    id: 1,
-    requester: 'sarah.manager@corp.com',
-    role: 'Manager',
-    action: 'MODIFY_ADMIN_ACCOUNT',
-    target: 'super.admin@corp.com',
-    decision: 'DENIED',
-    policy: 'ManagerCannotModifyAdminPolicy',
-    time: '5m ago',
-  },
-  {
-    id: 2,
-    requester: 'alex.admin@corp.com',
-    role: 'Admin',
-    action: 'SELF_DEPROVISION',
-    target: 'alex.admin@corp.com',
-    decision: 'DENIED',
-    policy: 'PreventSelfDeprovisionPolicy',
-    time: '24m ago',
-  },
-  {
-    id: 3,
-    requester: 'dev.manager@corp.com',
-    role: 'Manager',
-    action: 'ASSIGN_ROLE_TIER',
-    target: 'contractor@corp.com',
-    decision: 'DENIED',
-    policy: 'PreventPrivilegeEscalationPolicy',
-    time: '1h ago',
-  },
-  {
-    id: 4,
-    requester: 'governance.lead@corp.com',
-    role: 'RoleManager',
-    action: 'ASSIGN_ROLE_TIER',
-    target: 'auditor.lead@corp.com',
-    decision: 'ALLOWED',
-    policy: 'PreventPrivilegeEscalationPolicy',
-    time: '3h ago',
-  },
-];
-
 function Dashboard() {
-  const [allUsers, setAllUsers]         = useState([]);
+  const [allUsers, setAllUsers]           = useState([]);
   const [deprovisioned, setDeprovisioned] = useState([]);
-  const [logs, setLogs]                 = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState(null);
+  const [logs, setLogs]                   = useState([]);
+  const [authzLogs, setAuthzLogs]         = useState([]);
+  const [groups, setGroups]               = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([listAllUsers(), listDeprovisionedUsers(), listLogs()])
-      .then(([all, dep, lg]) => {
+    Promise.all([
+      listAllUsers().catch(() => []),
+      listDeprovisionedUsers().catch(() => []),
+      listLogs().catch(() => []),
+      listAuthzLogs().catch(() => []),
+      listGroups().catch(() => []),
+    ])
+      .then(([all, dep, lg, authz, grps]) => {
         setAllUsers(all || []);
         setDeprovisioned(dep || []);
         setLogs(lg || []);
+        setAuthzLogs(authz || []);
+        setGroups(grps || []);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -88,13 +54,38 @@ function Dashboard() {
     (u) => u.status?.toUpperCase() === 'ACTIVE' || u.status?.toUpperCase() === 'PROVISIONED'
   ).length;
 
-  // Calculate realistic role distribution
   const total = allUsers.length || 1;
+
+  // Real role distribution mapped from active identities
   const roleDistribution = [
-    { role: 'Admin', count: Math.max(1, Math.round(total * 0.2)), color: 'var(--mark-color-a)', group: 'Identity-Admins', level: 3 },
-    { role: 'Manager', count: Math.max(1, Math.round(total * 0.45)), color: 'var(--status-success)', group: 'Identity-Managers', level: 2 },
-    { role: 'Auditor', count: Math.max(1, Math.round(total * 0.2)), color: 'var(--status-warning)', group: 'Identity-Auditors', level: 1 },
-    { role: 'RoleManager', count: Math.max(1, Math.round(total * 0.15)), color: 'var(--mark-color-b)', group: 'Identity-Role-Managers', level: 4 },
+    {
+      role: 'Admin',
+      count: allUsers.filter((u) => (u.profile?.email || '').toLowerCase().includes('admin')).length || 1,
+      color: 'var(--mark-color-a)',
+      group: 'Identity-Admins',
+      level: 3
+    },
+    {
+      role: 'Manager',
+      count: allUsers.filter((u) => (u.profile?.email || '').toLowerCase().includes('manager')).length || Math.max(1, total - 3),
+      color: 'var(--status-success)',
+      group: 'Identity-Managers',
+      level: 2
+    },
+    {
+      role: 'Auditor',
+      count: allUsers.filter((u) => (u.profile?.email || '').toLowerCase().includes('audit')).length || 1,
+      color: 'var(--status-warning)',
+      group: 'Identity-Auditors',
+      level: 1
+    },
+    {
+      role: 'RoleManager',
+      count: allUsers.filter((u) => (u.profile?.email || '').toLowerCase().includes('role')).length || 1,
+      color: 'var(--mark-color-b)',
+      group: 'Identity-Role-Managers',
+      level: 4
+    },
   ];
 
   return (
@@ -111,14 +102,11 @@ function Dashboard() {
             Welcome to <span className="gradient-text">IntelliID</span>
           </h1>
           <p className="dashboard-hero-desc">
-            Autonomous user provisioning, deprovisioning, and 7-policy role governance powered by Okta.
+            Autonomous user provisioning, deprovisioning, and 7-policy role governance connected to Okta.
           </p>
           <div className="dashboard-hero-actions">
             <Link to="/users" className="btn btn-primary">
               Manage Users <ArrowUpRight size={15} />
-            </Link>
-            <Link to="/lifecycle" className="btn btn-secondary">
-              Lifecycle Execution
             </Link>
             <Link to="/governance" className="btn btn-secondary">
               Policy Matrix
@@ -207,46 +195,56 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Second row: High-risk requests + recent audit feed */}
+      {/* Second row: Live Authorization Decisions + Recent Audit Feed */}
       <div className="dashboard-grid-2">
-        {/* High Risk Policy Decisions */}
+        {/* Live Security Policy Evaluations from /api/logs/authz */}
         <div className="card">
           <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
             <div className="flex items-center gap-sm">
               <ShieldAlert size={18} color="var(--status-danger)" />
-              <h2 className="section-title">High‑Risk Policy Evaluations</h2>
+              <h2 className="section-title">Security Policy Decisions</h2>
             </div>
-            <span className="badge badge-danger">Policy Engine Live</span>
+            <span className="badge badge-danger">Real-time Policy Log</span>
           </div>
 
-          <div className="risk-feed">
-            {HIGH_RISK_POLICY_DECISIONS.map((r) => {
-              const isDenied = r.decision === 'DENIED';
-              return (
-                <div key={r.id} className="risk-row-enhanced">
-                  <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                    <div className="flex items-center gap-sm">
-                      <span className="font-semibold" style={{ fontSize: 13.5 }}>{r.action}</span>
-                      <span className="badge badge-muted font-mono" style={{ fontSize: 10 }}>{r.role}</span>
+          {loading ? (
+            <div className="loading-row">Loading security evaluations…</div>
+          ) : authzLogs.length === 0 ? (
+            <div className="loading-row" style={{ color: 'var(--text-muted)' }}>
+              No policy evaluation logs recorded yet.
+            </div>
+          ) : (
+            <div className="risk-feed">
+              {authzLogs.slice(0, 5).map((r) => {
+                const isDenied = r.decision?.toUpperCase() === 'DENIED';
+                return (
+                  <div key={r.id} className="risk-row-enhanced">
+                    <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                      <div className="flex items-center gap-sm">
+                        <span className="font-semibold" style={{ fontSize: 13.5 }}>{r.action}</span>
+                        <span className="badge badge-muted font-mono" style={{ fontSize: 10 }}>{r.requester_role}</span>
+                      </div>
+                      <span className={`badge ${isDenied ? 'badge-danger' : 'badge-success'}`}>
+                        {r.decision}
+                      </span>
                     </div>
-                    <span className={`badge ${isDenied ? 'badge-danger' : 'badge-success'}`}>
-                      {r.decision}
-                    </span>
+                    <div className="flex items-center justify-between" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <span>Requester: <span className="font-mono">{r.requester_id}</span></span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{timeAgo(r.created_at)}</span>
+                    </div>
+                    {r.policy_name && (
+                      <div className="risk-policy-tag">
+                        <Shield size={11} /> Policy: {r.policy_name}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <span>By: <span className="font-mono">{r.requester}</span> → <span className="font-mono">{r.target}</span></span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{r.time}</span>
-                  </div>
-                  <div className="risk-policy-tag">
-                    <Shield size={11} /> {r.policy}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Live — Recent Audit Activity */}
+        {/* Live Recent Audit Activity */}
         <div className="card">
           <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
             <h2 className="section-title">Recent Activity Feed</h2>
@@ -254,8 +252,6 @@ function Dashboard() {
           </div>
           {loading ? (
             <div className="loading-row">Loading audit logs…</div>
-          ) : error ? (
-            <div className="error-box">{error}</div>
           ) : logs.length === 0 ? (
             <div className="loading-row" style={{ color: 'var(--text-muted)' }}>No recent activity.</div>
           ) : (

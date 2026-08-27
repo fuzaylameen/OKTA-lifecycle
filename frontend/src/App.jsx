@@ -1,14 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import UserDetails from './pages/UserDetails';
 import Groups from './pages/Groups';
-import LifecycleExecution from './pages/LifecycleExecution';
-import Approvals from './pages/Approvals';
 import Governance from './pages/Governance';
 import AuditLog from './pages/AuditLog';
 import OnboardOffboard from './pages/OnboardOffboard';
+import { getAuthToken } from './api/client';
 import './index.css';
 
 // Layout wrapper for authenticated pages (top navbar + content)
@@ -23,24 +23,36 @@ function AppLayout({ children }) {
   );
 }
 
+// Protected route wrapper: if user isn't logged in, send them to /login
+function ProtectedRoute({ children }) {
+  const token = getAuthToken();
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  return <AppLayout>{children}</AppLayout>;
+}
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Root redirect to Dashboard */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+        {/* Public Login Route */}
+        <Route path="/login" element={<Login />} />
 
-        {/* Core application routes */}
-        <Route path="/dashboard"   element={<AppLayout><Dashboard /></AppLayout>} />
-        <Route path="/users"       element={<AppLayout><Users /></AppLayout>} />
-        <Route path="/users/:id"   element={<AppLayout><UserDetails /></AppLayout>} />
-        <Route path="/groups"      element={<AppLayout><Groups /></AppLayout>} />
-        <Route path="/lifecycle"   element={<AppLayout><LifecycleExecution /></AppLayout>} />
-        <Route path="/approvals"   element={<AppLayout><Approvals /></AppLayout>} />
-        <Route path="/governance"  element={<AppLayout><Governance /></AppLayout>} />
-        <Route path="/audit"       element={<AppLayout><AuditLog /></AppLayout>} />
-        <Route path="/onboard"     element={<AppLayout><OnboardOffboard /></AppLayout>} />
+        {/* Root redirect: check token */}
+        <Route
+          path="/"
+          element={<Navigate to={getAuthToken() ? '/dashboard' : '/login'} replace />}
+        />
+
+        {/* Protected application routes */}
+        <Route path="/dashboard"   element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/users"       element={<ProtectedRoute><Users /></ProtectedRoute>} />
+        <Route path="/users/:id"   element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
+        <Route path="/groups"      element={<ProtectedRoute><Groups /></ProtectedRoute>} />
+        <Route path="/governance"  element={<ProtectedRoute><Governance /></ProtectedRoute>} />
+        <Route path="/audit"       element={<ProtectedRoute><AuditLog /></ProtectedRoute>} />
+        <Route path="/onboard"     element={<ProtectedRoute><OnboardOffboard /></ProtectedRoute>} />
 
         {/* 404 fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

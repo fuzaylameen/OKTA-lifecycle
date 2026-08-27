@@ -70,6 +70,41 @@ class UserService:
         deprovisioned_users = await self.list_deprovisioned_users()
         return users + deprovisioned_users
 
+    async def get_user(self, user_id):
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/users/{user_id}"
+        )
+
+    async def get_user_by_email(self, email: str):
+        """
+        Retrieve an Okta user by email address or login.
+        """
+        try:
+            return await self.okta.request(
+                "GET",
+                f"/api/v1/users/{email}"
+            )
+        except Exception:
+            # Fallback search query
+            users = await self.okta.request(
+                "GET",
+                "/api/v1/users",
+                params={"filter": f'profile.email eq "{email}"'}
+            )
+            if users and len(users) > 0:
+                return users[0]
+            raise
+
+    async def get_user_groups(self, user_id: str):
+        """
+        Retrieve all Okta groups assigned to a user.
+        """
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/users/{user_id}/groups"
+        )
+
 
     async def create_user(self, user_data):
 
@@ -173,6 +208,68 @@ class UserService:
 
             self._create_log(
                 action="DEACTIVATE_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
+    async def suspend_user(self, user_id, reason=None):
+
+        try:
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}/lifecycle/suspend"
+            )
+
+            self._create_log(
+                action="SUSPEND_USER",
+                user_id=user_id,
+                old_value="ACTIVE",
+                new_value="SUSPENDED",
+                status="SUCCESS",
+                message=f"User suspended. Reason: {reason}" if reason else "User suspended"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="SUSPEND_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
+    async def reactivate_user(self, user_id):
+
+        try:
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}/lifecycle/unsuspend"
+            )
+
+            self._create_log(
+                action="REACTIVATE_USER",
+                user_id=user_id,
+                old_value="SUSPENDED",
+                new_value="ACTIVE",
+                status="SUCCESS",
+                message="User reactivated successfully"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="REACTIVATE_USER",
                 user_id=user_id,
                 status="FAILED",
                 message=str(e)

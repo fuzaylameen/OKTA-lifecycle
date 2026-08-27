@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   getUserById, getUserPasswordExpiry, expireUserPassword,
-  provisionUser, deactivateUser, deleteUser, getUserTimeline
+  provisionUser, suspendUser, reactivateUser, deactivateUser, deleteUser, getUserTimeline
 } from '../api/client';
 import RotateMark from '../components/RotateMark';
 import PolicyViolationModal from '../components/PolicyViolationModal';
@@ -41,22 +41,19 @@ const ROLE_DEFINITIONS = {
   }
 };
 
-function resolveUserRole(user, groups = []) {
-  // If user profile has title/department or group hints
-  const email = (user.profile?.email || '').toLowerCase();
-  if (email.includes('admin') || user.profile?.title?.toLowerCase().includes('admin')) {
-    return 'Admin';
+function resolveUserRole(user) {
+  if (user?.role && user.role !== 'Unassigned') {
+    return user.role;
   }
-  if (email.includes('role') || user.profile?.title?.toLowerCase().includes('governance')) {
-    return 'RoleManager';
+  const groups = user?.okta_groups || [];
+  for (const g of groups) {
+    const normalized = g.toLowerCase();
+    if (normalized.includes('admin')) return 'Admin';
+    if (normalized.includes('role')) return 'RoleManager';
+    if (normalized.includes('audit')) return 'Auditor';
+    if (normalized.includes('manager')) return 'Manager';
   }
-  if (email.includes('manager') || user.profile?.department?.toLowerCase().includes('management')) {
-    return 'Manager';
-  }
-  if (email.includes('audit') || user.profile?.title?.toLowerCase().includes('auditor')) {
-    return 'Auditor';
-  }
-  return 'Manager'; // Default operational role
+  return user?.role || 'Unassigned';
 }
 
 function formatDate(dateStr) {
@@ -153,6 +150,12 @@ function UserDetails() {
     try {
       if (actionType === 'provision') {
         await provisionUser(id);
+      } else if (actionType === 'suspend') {
+        const reason = window.prompt('Enter reason for suspension (required by Policy 4):', 'Administrative review');
+        if (!reason) return;
+        await suspendUser(id, reason);
+      } else if (actionType === 'reactivate') {
+        await reactivateUser(id);
       } else if (actionType === 'deactivate') {
         await deactivateUser(id);
       } else if (actionType === 'delete') {
@@ -375,11 +378,25 @@ function UserDetails() {
             </button>
             <button
               className="btn btn-secondary btn-sm"
+              disabled={actionLoading || user.status === 'SUSPENDED'}
+              onClick={() => handleAction('suspend')}
+            >
+              <Lock size={14} /> Suspend
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={actionLoading || user.status !== 'SUSPENDED'}
+              onClick={() => handleAction('reactivate')}
+            >
+              <Check size={14} /> Reactivate
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
               disabled={actionLoading || user.status === 'DEPROVISIONED'}
               onClick={() => setConfirmDialog({
                 isOpen: true,
-                title: 'Suspend / Deprovision User',
-                message: `Suspend active access for ${p.email}? The account will be deactivated in Okta.`,
+                title: 'Deprovision User',
+                message: `Deprovision and deactivate ${p.email} in Okta?`,
                 confirmText: 'Deprovision User',
                 isDanger: true,
                 action: 'deactivate'

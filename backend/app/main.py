@@ -8,7 +8,8 @@ from app.routers import (
     groups,
     logs,
     export,
-    bulk_users
+    bulk_users,
+    auth
 )
 
 
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 
 
+app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(groups.router)
 app.include_router(logs.router)

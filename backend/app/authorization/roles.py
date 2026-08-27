@@ -92,6 +92,8 @@ def parse_role(role_str: str) -> Role:
     if not role_str:
         raise ValueError("Role cannot be empty")
     cleaned = role_str.strip().lower()
+    if cleaned in OKTA_GROUP_ROLE_MAP:
+        return OKTA_GROUP_ROLE_MAP[cleaned]
     if cleaned in ("viewer", "auditor"):
         return Role.AUDITOR
     if cleaned in ("operator", "manager"):

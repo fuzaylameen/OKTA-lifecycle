@@ -24,23 +24,20 @@ const ROLE_MAP = {
 };
 
 function resolveRoleAndGroup(user) {
-  const email = (user.profile?.email || '').toLowerCase();
-  const title = (user.profile?.title || '').toLowerCase();
-  const dept = (user.profile?.department || '').toLowerCase();
+  const role = user.role || 'Unassigned';
+  const group = user.primary_group || user.okta_groups?.[0] || 'Everyone';
 
-  if (email.includes('admin') || title.includes('admin')) {
-    return { role: 'Admin', ...ROLE_MAP.Admin };
-  }
-  if (email.includes('role') || title.includes('governance')) {
-    return { role: 'RoleManager', ...ROLE_MAP.RoleManager };
-  }
-  if (email.includes('audit') || title.includes('auditor')) {
-    return { role: 'Auditor', ...ROLE_MAP.Auditor };
-  }
-  if (email.includes('manager') || dept.includes('management')) {
-    return { role: 'Manager', ...ROLE_MAP.Manager };
-  }
-  return { role: 'Manager', ...ROLE_MAP.Manager };
+  const badgeClass =
+    role === 'Admin'       ? 'badge-provisioned' :
+    role === 'RoleManager' ? 'badge-preview' :
+    role === 'Manager'     ? 'badge-active' :
+    role === 'Auditor'     ? 'badge-muted' : 'badge-muted';
+
+  return {
+    role,
+    group,
+    class: badgeClass,
+  };
 }
 
 function StatusBadge({ status }) {

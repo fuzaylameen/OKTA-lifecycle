@@ -106,25 +106,72 @@ async def _resolve_target_role(user_id: str) -> Optional[Role]:
         return None
 
 
+async def _enrich_user(user: dict) -> dict:
+    uid = user.get("id")
+    if not uid:
+        return user
+    try:
+        groups = await service.get_user_groups(uid)
+        group_names = []
+        if isinstance(groups, list):
+            for g in groups:
+                p = g.get("profile", {})
+                name = p.get("name") or g.get("name")
+                if name:
+                    group_names.append(name)
+
+        matched_role = None
+        matched_group = None
+        for gname in group_names:
+            normalized = gname.strip().lower()
+            if normalized in OKTA_GROUP_ROLE_MAP:
+                matched_role = OKTA_GROUP_ROLE_MAP[normalized].value
+                matched_group = gname
+                break
+
+        user_copy = dict(user)
+        user_copy["role"] = matched_role or "Unassigned"
+        user_copy["okta_groups"] = group_names
+        user_copy["primary_group"] = matched_group or (group_names[0] if group_names else "None")
+        return user_copy
+    except Exception:
+        user_copy = dict(user)
+        user_copy["role"] = "Unassigned"
+        user_copy["okta_groups"] = []
+        user_copy["primary_group"] = "None"
+        return user_copy
+
+
+async def _enrich_users(users_list: list) -> list:
+    if not isinstance(users_list, list):
+        return []
+    import asyncio
+    tasks = [_enrich_user(u) for u in users_list]
+    return list(await asyncio.gather(*tasks))
+
+
 @router.get("/")
 async def get_users(
     current_user: AuthContext = Depends(require_permission(Permission.USER_LIST))
 ):
-    return await service.list_users()
+    users = await service.list_users()
+    return await _enrich_users(users)
 
 
 @router.get("/all")
 async def get_all_users(
     current_user: AuthContext = Depends(require_permission(Permission.USER_LIST))
 ):
-    return await service.list_all_users()
+    users = await service.list_all_users()
+    return await _enrich_users(users)
 
 
 @router.get("/deprovisioned")
 async def get_deprovisioned_users(
     current_user: AuthContext = Depends(require_permission(Permission.USER_LIST))
 ):
-    return await service.list_deprovisioned_users()
+    users = await service.list_deprovisioned_users()
+    return await _enrich_users(users)
 
 
 @router.post("/")

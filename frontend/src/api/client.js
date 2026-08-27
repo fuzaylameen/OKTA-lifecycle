@@ -1,65 +1,57 @@
 /**
  * IntelliID API Client
  *
- * Thin fetch wrapper reading VITE_API_BASE_URL from .env
- * All functions return parsed JSON or throw a descriptive Error.
- *
- * ── Real Backend Endpoints (verified against backend/app/routers/) ──────────
- *
- *  Users                            router prefix: /api/users
- *    GET    /api/users/             → listUsers()
- *    GET    /api/users/all          → listAllUsers()
- *    GET    /api/users/deprovisioned→ listDeprovisionedUsers()
- *    POST   /api/users/             → createUser(data)          body: {first_name, last_name, email}
- *    POST   /api/users/:id/provision→ provisionUser(id)
- *    POST   /api/users/:id/deactivate→ deactivateUser(id)
- *    DELETE /api/users/:id          → deleteUser(id)
- *    GET    /api/users/password-expiry → listPasswordExpiry()
- *    GET    /api/users/:id/password-expiry → getUserPasswordExpiry(id)
- *    POST   /api/users/:id/expire-password → expireUserPassword(id)
- *
- *  Groups                           router prefix: /api/groups
- *    GET    /api/groups/            → listGroups()
- *    POST   /api/groups/move        → moveUser(userId, oldGroupId, newGroupId)
- *                                     body: {user_id, old_group_id, new_group_id}
- *
- *  Logs                             router prefix: /api/logs
- *    GET    /api/logs/              → listLogs()
- *                                     returns: [{id, action, user_id, user_email,
- *                                               old_value, new_value, status,
- *                                               message, created_at}]
- *
- *  Bulk Users                       router prefix: /api/bulk/users
- *    POST   /api/bulk/users/provision  → bulkProvision(userIds)  body: {user_ids: [...]}
- *    POST   /api/bulk/users/deactivate → bulkDeactivate(userIds) body: {user_ids: [...]}
- *    DELETE /api/bulk/users/           → bulkDelete(userIds)     body: {user_ids: [...]}
- *    POST   /api/bulk/users/import-csv → importUsersCSV(file)   multipart/form-data
- *
- *  Export                           router prefix: /api/export
- *    GET    /api/export/users.csv   → exportUsersCSVUrl()  (direct download link)
- *
- *  ── NOT YET IN BACKEND (UI shells only) ──────────────────────────────────
- *    GET    /api/auth/me            → getCurrentUser()   (graceful 404 fallback)
- *    POST   /api/lifecycle/dry-run  → lifecycleDryRun()  (graceful 404 fallback)
- *    GET    /api/lifecycle/:id      → getLifecycleOperation()
- *    POST   /api/lifecycle/:id/confirm → confirmLifecycle()
- *    POST   /api/lifecycle/:id/cancel  → cancelLifecycle()
- *    GET    /api/lifecycle/:id/verify  → verifyLifecycle()
- *    GET    /api/approvals          → listApprovals()    (graceful 404 fallback)
- *    POST   /api/approvals/:id/approve → approveRequest()
- *    POST   /api/approvals/:id/reject  → rejectRequest()
- *    POST   /api/approvals/:id/escalate→ escalateRequest()
+ * Connected directly to verified FastAPI backend routers:
+ *  - Auth:      /api/auth/token, /api/auth/me
+ *  - Users:     /api/users/, /all, /deprovisioned, /:id/provision, /:id/suspend,
+ *               /:id/reactivate, /:id/deactivate, /:id, /:id/role,
+ *               /password-expiry, /:id/password-expiry, /:id/expire-password
+ *  - Groups:    /api/groups/, /api/groups/move
+ *  - Logs:      /api/logs/, /api/logs/authz
+ *  - Bulk:      /api/bulk/users/provision, /deactivate, /, /import-csv
+ *  - Export:    /api/export/users.csv
  */
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const TOKEN_KEY = 'intelliid_auth_token';
+const USER_KEY  = 'intelliid_auth_user';
+
+// ─── Token helpers ────────────────────────────────────────────────────────────
+
+export const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
+export const setAuthToken = (token) => {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+};
+
+export const getStoredUser = () => {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const setStoredUser = (user) => {
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  else localStorage.removeItem(USER_KEY);
+};
 
 // ─── Core request helper ──────────────────────────────────────────────────────
 
 async function request(path, options = {}) {
   const url = `${BASE_URL}${path}`;
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+
+  const token = getAuthToken();
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers,
   });
 
   if (!res.ok) {
@@ -69,7 +61,6 @@ async function request(path, options = {}) {
 
     try {
       const err = await res.json();
-      // FastAPI returns {detail: "string"} or {detail: {message, policy, reason}}
       if (typeof err.detail === 'string') {
         detail = err.detail;
       } else if (typeof err.detail === 'object' && err.detail !== null) {
@@ -77,7 +68,7 @@ async function request(path, options = {}) {
         reason = err.detail.reason || null;
         detail = err.detail.message || reason || JSON.stringify(err.detail);
       }
-    } catch (_) { /* ignore JSON parse errors */ }
+    } catch (_) { /* ignore parse error */ }
 
     const error = new Error(detail);
     error.status = res.status;
@@ -93,60 +84,58 @@ async function request(path, options = {}) {
   return null;
 }
 
-// ─── Auth / Current User (NOT in backend yet — graceful fallback) ─────────────
+// ─── Authentication ───────────────────────────────────────────────────────────
+
+export const loginWithEmail = async (email) => {
+  const data = await request('/api/auth/token', {
+    method: 'POST',
+    body: JSON.stringify({ email: email.trim() }),
+  });
+
+  if (data?.access_token) {
+    setAuthToken(data.access_token);
+    setStoredUser(data);
+  }
+  return data;
+};
+
+export const logout = () => {
+  setAuthToken(null);
+  setStoredUser(null);
+};
 
 export const getCurrentUser = async () => {
   try {
-    return await request('/api/auth/me');
+    const data = await request('/api/auth/me');
+    if (data) {
+      const stored = getStoredUser() || {};
+      const merged = { ...stored, ...data };
+      setStoredUser(merged);
+      return merged;
+    }
   } catch (_) {
-    // /api/auth/me does not exist in backend yet — return demo admin context
-    return {
-      id: 'current-user',
-      name: 'Security Admin',
-      email: 'admin@okta-identity.local',
-      role: 'Admin',
-      okta_group: 'Identity-Admins',
-      privilege_level: 3,
-      permissions: ['users:read', 'users:write', 'users:lifecycle', 'audit:read'],
-    };
+    // Fall back to stored session if network fails
   }
+
+  return getStoredUser() || null;
 };
 
-// ─── Logs (declared first — used by getUserTimeline below) ───────────────────
+// ─── Logs & Security Authorization Audit ──────────────────────────────────────
 
-/**
- * GET /api/logs/
- * Returns array of: { id, action, user_id, user_email, old_value, new_value,
- *                     status, message, created_at }
- * Ordered by created_at DESC.
- */
 export const listLogs = () => request('/api/logs/');
+export const listAuthzLogs = () => request('/api/logs/authz');
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
-/** GET /api/users/ — active users only (no DEPROVISIONED) */
 export const listUsers = () => request('/api/users/');
-
-/** GET /api/users/all — active + deprovisioned combined */
 export const listAllUsers = () => request('/api/users/all');
-
-/** GET /api/users/deprovisioned — deprovisioned users only */
 export const listDeprovisionedUsers = () => request('/api/users/deprovisioned');
 
-/**
- * No dedicated GET /api/users/:id endpoint exists in the backend.
- * We fetch all users and find by id. Falls back to null if not found.
- */
 export const getUserById = async (userId) => {
   const all = await listAllUsers();
   return all.find((u) => u.id === userId) || null;
 };
 
-/**
- * POST /api/users/
- * Backend UserCreate schema: { first_name, last_name, email }
- * Note: login is NOT in the schema — backend uses email as login.
- */
 export const createUser = (data) =>
   request('/api/users/', {
     method: 'POST',
@@ -157,40 +146,38 @@ export const createUser = (data) =>
     }),
   });
 
-/** POST /api/users/:id/provision — sends activation email to user */
 export const provisionUser = (userId) =>
   request(`/api/users/${userId}/provision`, { method: 'POST' });
 
-/** POST /api/users/:id/deactivate — deactivates account in Okta */
+export const suspendUser = (userId, reason) =>
+  request(`/api/users/${userId}/suspend`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+
+export const reactivateUser = (userId) =>
+  request(`/api/users/${userId}/reactivate`, { method: 'POST' });
+
 export const deactivateUser = (userId) =>
   request(`/api/users/${userId}/deactivate`, { method: 'POST' });
 
-/** DELETE /api/users/:id — permanently deletes user from Okta */
 export const deleteUser = (userId) =>
   request(`/api/users/${userId}`, { method: 'DELETE' });
 
-/** GET /api/users/password-expiry — expiry info for all users */
+export const assignUserRole = (userId, role) =>
+  request(`/api/users/${userId}/role`, {
+    method: 'POST',
+    body: JSON.stringify({ role }),
+  });
+
 export const listPasswordExpiry = () => request('/api/users/password-expiry');
 
-/**
- * GET /api/users/:id/password-expiry
- * Returns: { user_id, email, password_changed, expiry_date,
- *             days_remaining, status, expiry_days }
- * status values: ACTIVE | EXPIRING_SOON | EXPIRED | NO_PASSWORD_DATE | INVALID_PASSWORD_DATE
- */
 export const getUserPasswordExpiry = (userId) =>
   request(`/api/users/${userId}/password-expiry`);
 
-/** POST /api/users/:id/expire-password — forces password expiry at next login */
 export const expireUserPassword = (userId) =>
   request(`/api/users/${userId}/expire-password`, { method: 'POST' });
 
-// ─── User Timeline (derived from real audit log — no dedicated endpoint) ──────
-
-/**
- * Filters GET /api/logs/ records by user_id or user_email.
- * This is a frontend-composed view — no dedicated backend endpoint exists.
- */
 export const getUserTimeline = async (userId, email) => {
   const logs = await listLogs();
   return logs.filter((log) => {
@@ -203,17 +190,8 @@ export const getUserTimeline = async (userId, email) => {
 
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/groups/
- * Returns Okta group objects with { id, profile: { name }, objectClass }
- */
 export const listGroups = () => request('/api/groups/');
 
-/**
- * POST /api/groups/move
- * Body: { user_id, old_group_id, new_group_id }
- * Removes user from old_group_id and adds to new_group_id in Okta.
- */
 export const moveUser = (userId, oldGroupId, newGroupId) =>
   request('/api/groups/move', {
     method: 'POST',
@@ -226,35 +204,35 @@ export const moveUser = (userId, oldGroupId, newGroupId) =>
 
 // ─── Bulk Operations ──────────────────────────────────────────────────────────
 
-/** POST /api/bulk/users/provision  body: { user_ids: [...] } */
 export const bulkProvision = (userIds) =>
   request('/api/bulk/users/provision', {
     method: 'POST',
     body: JSON.stringify({ user_ids: userIds }),
   });
 
-/** POST /api/bulk/users/deactivate  body: { user_ids: [...] } */
 export const bulkDeactivate = (userIds) =>
   request('/api/bulk/users/deactivate', {
     method: 'POST',
     body: JSON.stringify({ user_ids: userIds }),
   });
 
-/** DELETE /api/bulk/users/  body: { user_ids: [...] } */
 export const bulkDelete = (userIds) =>
   request('/api/bulk/users/', {
     method: 'DELETE',
     body: JSON.stringify({ user_ids: userIds }),
   });
 
-/** POST /api/bulk/users/import-csv  multipart form */
 export const importUsersCSV = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
+  const token = getAuthToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(`${BASE_URL}/api/bulk/users/import-csv`, {
     method: 'POST',
+    headers,
     body: formData,
-    // No Content-Type header — browser sets it with boundary automatically
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -266,41 +244,4 @@ export const importUsersCSV = async (file) => {
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-/** GET /api/export/users.csv — returns streaming CSV download */
 export const exportUsersCSVUrl = () => `${BASE_URL}/api/export/users.csv`;
-
-// ─── Lifecycle Engine (NOT in backend yet) ────────────────────────────────────
-
-export const lifecycleDryRun = (payload) =>
-  request('/api/lifecycle/dry-run', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-
-export const getLifecycleOperation = (operationId) =>
-  request(`/api/lifecycle/${operationId}`);
-
-export const confirmLifecycle = (operationId) =>
-  request(`/api/lifecycle/${operationId}/confirm`, { method: 'POST' });
-
-export const cancelLifecycle = (operationId) =>
-  request(`/api/lifecycle/${operationId}/cancel`, { method: 'POST' });
-
-export const verifyLifecycle = (operationId) =>
-  request(`/api/lifecycle/${operationId}/verify`);
-
-// ─── Approvals (NOT in backend yet) ──────────────────────────────────────────
-
-export const listApprovals = () => request('/api/approvals');
-
-export const approveRequest = (requestId) =>
-  request(`/api/approvals/${requestId}/approve`, { method: 'POST' });
-
-export const rejectRequest = (requestId, reason = '') =>
-  request(`/api/approvals/${requestId}/reject`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  });
-
-export const escalateRequest = (requestId) =>
-  request(`/api/approvals/${requestId}/escalate`, { method: 'POST' });
