@@ -12,8 +12,8 @@ import pytest
 
 def test_role_hierarchy():
     assert get_role_level(Role.AUDITOR) < get_role_level(Role.MANAGER)
-    assert get_role_level(Role.MANAGER) < get_role_level(Role.ROLE_MANAGER)
-    assert get_role_level(Role.ROLE_MANAGER) < get_role_level(Role.ADMIN)
+    assert get_role_level(Role.MANAGER) < get_role_level(Role.ADMIN)
+    assert get_role_level(Role.ADMIN) < get_role_level(Role.ROLE_MANAGER)
 
 
 def test_auditor_permissions():

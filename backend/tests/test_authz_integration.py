@@ -264,6 +264,33 @@ def test_role_manager_assign_role_allowed(mock_okta_request):
     assert response.json()["success"] is True
 
 
+def test_role_manager_assign_admin_role_allowed(mock_okta_request):
+    """RoleManager -> assign Admin role to user -> ALLOW (200)"""
+    headers = get_auth_headers("rm_1", "rm@company.com", "RoleManager")
+    response = client.post(
+        "/api/users/target_user_123/role",
+        json={"role": "Admin"},
+        headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["new_role"] == "Admin"
+
+
+def test_role_manager_change_admin_user_role_allowed(mock_okta_request):
+    """RoleManager -> change role of an existing Admin user -> ALLOW (200)"""
+    headers = get_auth_headers("rm_1", "rm@company.com", "RoleManager")
+    with patch.object(UserService, "get_user_groups", new_callable=AsyncMock) as mock_target_groups:
+        mock_target_groups.return_value = [{"profile": {"name": "Identity-Admin"}}]
+        response = client.post(
+            "/api/users/admin_user_999/role",
+            json={"role": "Manager"},
+            headers=headers
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+
 def test_role_manager_lifecycle_create_user_denied(mock_okta_request):
     """RoleManager -> create user -> DENY (403: RoleManager has NO lifecycle access)"""
     headers = get_auth_headers("rm_1", "rm@company.com", "RoleManager")

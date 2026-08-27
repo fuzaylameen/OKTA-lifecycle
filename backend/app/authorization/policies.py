@@ -136,12 +136,12 @@ class PreventSelfRoleEscalationPolicy(BasePolicy):
 class PrivilegedUserProtectionPolicy(BasePolicy):
     """
     Policy 7 — Privileged-user protection
-    Protects privileged accounts (Manager/Admin) from actions by peers or lower roles.
+    Protects privileged accounts (Manager/Admin/RoleManager) from actions by peers or lower roles.
     """
     name = "privileged_user_protection"
 
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
-        if context.target_role in {Role.MANAGER, Role.ADMIN} and context.action in SENSITIVE_ACTIONS:
+        if context.target_role in {Role.MANAGER, Role.ADMIN, Role.ROLE_MANAGER} and context.action in SENSITIVE_ACTIONS:
             requester_level = get_role_level(context.requester.role)
             target_level = get_role_level(context.target_role)
 

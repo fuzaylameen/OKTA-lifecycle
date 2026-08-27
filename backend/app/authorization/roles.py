@@ -16,8 +16,8 @@ class Role(str, Enum):
 ROLE_HIERARCHY: Dict[Role, int] = {
     Role.AUDITOR: 1,
     Role.MANAGER: 2,
-    Role.ROLE_MANAGER: 3,
-    Role.ADMIN: 4,
+    Role.ADMIN: 3,
+    Role.ROLE_MANAGER: 4
 }
 
 # Mapping from Okta Group Name (lowercased) to Application Role (supports singular & plural)
@@ -34,8 +34,8 @@ OKTA_GROUP_ROLE_MAP: Dict[str, Role] = {
 
 
 ROLE_PRECEDENCE: List[Role] = [
-    Role.ADMIN,
     Role.ROLE_MANAGER,
+    Role.ADMIN,
     Role.MANAGER,
     Role.AUDITOR,
 ]

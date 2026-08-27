@@ -1,11 +1,12 @@
-from typing import Optional
+from typing import Optional, Dict
 from fastapi import APIRouter, HTTPException, Depends, Header, Query
 
 from app.schemas.user import UserCreate
 from app.schemas.auth import SuspendRequest, RoleAssignRequest
 from app.services.user_service import UserService
+from app.services.group_service import GroupService
 from app.authorization.permissions import Permission
-from app.authorization.roles import Role, parse_role
+from app.authorization.roles import Role, parse_role, OKTA_GROUP_ROLE_MAP
 from app.authorization.models import AuthContext
 from app.authorization.dependencies import (
     require_permission,
@@ -19,6 +20,69 @@ router = APIRouter(
 )
 
 service = UserService()
+group_service = GroupService()
+
+ROLE_DEFAULT_OKTA_GROUP: Dict[Role, str] = {
+    Role.ADMIN: "Identity-Admins",
+    Role.ROLE_MANAGER: "Identity-Role-Managers",
+    Role.MANAGER: "Identity-Managers",
+    Role.AUDITOR: "Identity-Auditors",
+}
+
+
+async def _sync_user_role_to_okta(user_id: str, new_role: Role) -> dict:
+    """
+    Sync user's role directly to Okta by:
+    1. Finding the matching Okta Identity group for new_role.
+    2. Removing the user from any previous Okta Identity groups (SoD enforcement).
+    3. Adding the user to the target Okta group.
+    """
+    all_groups = await group_service.list_groups()
+    if not isinstance(all_groups, list):
+        all_groups = []
+
+    target_group_id = None
+    target_group_name = ROLE_DEFAULT_OKTA_GROUP.get(new_role, "Identity-Admins")
+
+    # 1. Search for matching Okta group in live Okta directory
+    for g in all_groups:
+        if isinstance(g, dict):
+            name = (g.get("profile", {}).get("name") or g.get("name", "")).strip().lower()
+            if OKTA_GROUP_ROLE_MAP.get(name) == new_role:
+                target_group_id = g.get("id")
+                target_group_name = g.get("profile", {}).get("name") or g.get("name")
+                break
+
+    # If groups couldn't be listed or not found by map, search by exact target group name
+    if not target_group_id:
+        for g in all_groups:
+            if isinstance(g, dict):
+                name = (g.get("profile", {}).get("name") or g.get("name", "")).strip()
+                if name.lower() == target_group_name.lower():
+                    target_group_id = g.get("id")
+                    break
+
+    # 2. Remove user from existing Identity groups (Separation of Duties)
+    try:
+        user_groups = await service.get_user_groups(user_id)
+        if isinstance(user_groups, list):
+            for ug in user_groups:
+                if isinstance(ug, dict):
+                    ug_id = ug.get("id")
+                    ug_name = (ug.get("profile", {}).get("name") or ug.get("name", "")).strip().lower()
+                    if ug_name in OKTA_GROUP_ROLE_MAP and ug_id and ug_id != target_group_id:
+                        await group_service.remove_user(ug_id, user_id)
+    except Exception:
+        pass
+
+    # 3. Add user to the new Okta group
+    if target_group_id:
+        await group_service.add_user(target_group_id, user_id)
+
+    return {
+        "group_id": target_group_id,
+        "group_name": target_group_name
+    }
 
 
 async def _resolve_target_role(user_id: str) -> Optional[Role]:
@@ -277,12 +341,41 @@ async def assign_user_role(
         new_role=new_role_enum
     )
 
-    return {
-        "success": True,
-        "message": f"Role '{new_role_enum.value}' assigned to user {user_id} successfully",
-        "user_id": user_id,
-        "new_role": new_role_enum.value
-    }
+    try:
+        sync_result = await _sync_user_role_to_okta(user_id, new_role_enum)
+
+        service._create_log(
+            action="ASSIGN_ROLE",
+            user_id=user_id,
+            old_value=resolved_target_role.value if resolved_target_role else None,
+            new_value=new_role_enum.value,
+            status="SUCCESS",
+            message=f"Role '{new_role_enum.value}' assigned in Okta group '{sync_result.get('group_name')}'"
+        )
+
+        return {
+            "success": True,
+            "message": f"Role '{new_role_enum.value}' assigned to user {user_id} successfully",
+            "user_id": user_id,
+            "new_role": new_role_enum.value,
+            "okta_group": sync_result.get("group_name")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        service._create_log(
+            action="ASSIGN_ROLE",
+            user_id=user_id,
+            old_value=resolved_target_role.value if resolved_target_role else None,
+            new_value=new_role_enum.value,
+            status="FAILED",
+            message=str(e)
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to synchronize role assignment with Okta: {str(e)}"
+        )
 
 
 
