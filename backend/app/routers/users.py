@@ -32,7 +32,12 @@ async def _resolve_target_role(user_id: str) -> Optional[Role]:
                 name = p.get("name") or g.get("name")
                 if name:
                     group_names.append(name)
-        return resolve_role_from_okta_groups(group_names)
+        for group_name in group_names:
+            try:
+                return parse_role(group_name)
+            except ValueError:
+                continue
+        return None
     except Exception:
         return None
 

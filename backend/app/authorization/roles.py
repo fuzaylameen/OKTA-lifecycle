@@ -20,13 +20,18 @@ ROLE_HIERARCHY: Dict[Role, int] = {
     Role.ADMIN: 4,
 }
 
-# Mapping from Okta Group Name (lowercased) to Application Role
+# Mapping from Okta Group Name (lowercased) to Application Role (supports singular & plural)
 OKTA_GROUP_ROLE_MAP: Dict[str, Role] = {
     "identity-auditors": Role.AUDITOR,
+    "identity-auditor": Role.AUDITOR,
     "identity-managers": Role.MANAGER,
+    "identity-manager": Role.MANAGER,
     "identity-admin": Role.ADMIN,
+    "identity-admins": Role.ADMIN,
     "identity-role-managers": Role.ROLE_MANAGER,
+    "identity-role-manager": Role.ROLE_MANAGER,
 }
+
 
 ROLE_PRECEDENCE: List[Role] = [
     Role.ADMIN,
@@ -74,6 +79,10 @@ ROLE_PERMISSIONS: Dict[Role, Set[Permission]] = {
         Permission.ROLE_MANAGE,
         Permission.POLICY_MANAGE,
         Permission.AUDIT_READ,
+        Permission.USER_READ,
+        Permission.USER_LIST,
+        Permission.USER_SEARCH,
+        Permission.AUDIT_READ
     },
 }
 

@@ -164,10 +164,15 @@ class PrivilegedUserProtectionPolicy(BasePolicy):
 
 PROTECTED_IDENTITY_GROUPS: Set[str] = {
     "identity-auditors",
+    "identity-auditor",
     "identity-managers",
+    "identity-manager",
     "identity-admin",
+    "identity-admins",
     "identity-role-managers",
+    "identity-role-manager",
 }
+
 
 
 class ProtectedIdentityGroupPolicy(BasePolicy):
