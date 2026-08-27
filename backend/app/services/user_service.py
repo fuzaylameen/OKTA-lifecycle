@@ -13,6 +13,10 @@ class UserService:
     def __init__(self):
         self.okta = OktaClient()
 
+    # ============================================================
+    # AUDIT LOGGING
+    # ============================================================
+
     def _create_log(
         self,
         action,
@@ -45,8 +49,11 @@ class UserService:
             db.commit()
 
         finally:
-
             db.close()
+
+    # ============================================================
+    # USER LIST / READ OPERATIONS
+    # ============================================================
 
     async def list_users(self):
 
@@ -69,6 +76,7 @@ class UserService:
 
         users = await self.list_users()
         deprovisioned_users = await self.list_deprovisioned_users()
+
         return users + deprovisioned_users
 
     async def list_user_groups(self, user_id):
@@ -78,6 +86,16 @@ class UserService:
             f"/api/v1/users/{user_id}/groups"
         )
 
+    async def get_user(self, user_id):
+
+        return await self.okta.request(
+            "GET",
+            f"/api/v1/users/{user_id}"
+        )
+
+    # ============================================================
+    # CREATE USER
+    # ============================================================
 
     async def create_user(self, user_data):
 
@@ -121,13 +139,22 @@ class UserService:
 
             raise
 
+    # ============================================================
+    # PROVISION USER
+    # ============================================================
+
     async def provision_user(self, user_id):
+
+        """
+        Handle a PROVISIONED user using Okta's reactivation
+        lifecycle endpoint.
+        """
 
         try:
 
             result = await self.okta.request(
                 "POST",
-                f"/api/v1/users/{user_id}/lifecycle/activate",
+                f"/api/v1/users/{user_id}/lifecycle/reactivate",
                 params={
                     "sendEmail": "false"
                 }
@@ -138,7 +165,7 @@ class UserService:
                 user_id=user_id,
                 new_value="ACTIVE",
                 status="SUCCESS",
-                message="User provisioned successfully"
+                message="User reactivated successfully"
             )
 
             return result
@@ -153,6 +180,57 @@ class UserService:
             )
 
             raise
+
+    # ============================================================
+    # ACTIVATE USER
+    # ============================================================
+
+    async def activate_user(self, user_id, send_email=False):
+
+        """
+        Activate a STAGED or DEPROVISIONED user.
+
+        This uses:
+            POST /lifecycle/activate
+
+        This is different from:
+            PROVISIONED -> /lifecycle/reactivate
+        """
+
+        try:
+
+            result = await self.okta.request(
+                "POST",
+                f"/api/v1/users/{user_id}/lifecycle/activate",
+                params={
+                    "sendEmail": str(send_email).lower()
+                }
+            )
+
+            self._create_log(
+                action="ACTIVATE_USER",
+                user_id=user_id,
+                new_value="ACTIVE",
+                status="SUCCESS",
+                message="User activated successfully"
+            )
+
+            return result
+
+        except Exception as e:
+
+            self._create_log(
+                action="ACTIVATE_USER",
+                user_id=user_id,
+                status="FAILED",
+                message=str(e)
+            )
+
+            raise
+
+    # ============================================================
+    # DEACTIVATE USER
+    # ============================================================
 
     async def deactivate_user(self, user_id):
 
@@ -188,12 +266,17 @@ class UserService:
 
             raise
 
+    # ============================================================
+    # BULK DEACTIVATE
+    # ============================================================
+
     async def bulk_deactivate(self, user_ids):
+
         """
-        Sequentially deactivates each user via the existing, unmodified
-        deactivate_user() (so each one gets its own AuditLog row exactly
-        as a single DEACTIVATE does), and returns the same aggregate
-        shape lifecycle_execution_service._execute() expects.
+        Sequentially deactivates each user through the existing
+        deactivate_user() method.
+
+        Each individual operation gets its own AuditLog row.
         """
 
         results = []
@@ -220,42 +303,48 @@ class UserService:
 
         return {
             "total": len(user_ids),
-            "successful": sum(1 for r in results if r["status"] == "success"),
-            "failed": sum(1 for r in results if r["status"] == "failed"),
+            "successful": sum(
+                1
+                for r in results
+                if r["status"] == "success"
+            ),
+            "failed": sum(
+                1
+                for r in results
+                if r["status"] == "failed"
+            ),
             "results": results
         }
 
-    async def reactivate_user(self, user_id):
+    # ============================================================
+    # UNSUSPEND USER
+    # ============================================================
+
+    async def unsuspend_user(self, user_id):
+
         """
-        Reverses a prior DEACTIVATE_USER. deactivate_user() calls
-        /lifecycle/deactivate, which leaves the user DEPROVISIONED in
-        Okta - not SUSPENDED - so /lifecycle/unsuspend does not apply
-        here (it only accepts users currently in SUSPENDED status).
-        Okta's documented way to bring a DEPROVISIONED user back is to
-        call /lifecycle/activate again, the same endpoint
-        provision_user() uses for a brand-new STAGED user. This is
-        still a distinct method with its own audit action so
-        "recovered from deactivation" is never confused with "activated
-        for the first time" in the audit trail / identity timeline.
+        Reactivate a SUSPENDED user.
+
+        SUSPENDED -> ACTIVE
+
+        Uses:
+            POST /lifecycle/unsuspend
         """
 
         try:
 
             result = await self.okta.request(
                 "POST",
-                f"/api/v1/users/{user_id}/lifecycle/activate",
-                params={
-                    "sendEmail": "true"
-                }
+                f"/api/v1/users/{user_id}/lifecycle/unsuspend"
             )
 
             self._create_log(
-                action="REACTIVATE_USER",
+                action="UNSUSPEND_USER",
                 user_id=user_id,
-                old_value="DEACTIVATED",
+                old_value="SUSPENDED",
                 new_value="ACTIVE",
                 status="SUCCESS",
-                message="User reactivated successfully"
+                message="User unsuspended successfully"
             )
 
             return result
@@ -263,7 +352,7 @@ class UserService:
         except Exception as e:
 
             self._create_log(
-                action="REACTIVATE_USER",
+                action="UNSUSPEND_USER",
                 user_id=user_id,
                 status="FAILED",
                 message=str(e)
@@ -271,12 +360,17 @@ class UserService:
 
             raise
 
+    # ============================================================
+    # UPDATE USER PROFILE
+    # ============================================================
+
     async def update_profile(self, user_id, profile_changes):
+
         """
-        Partially updates an Okta user's profile. Reads the current
-        profile first so the audit log captures real before/after
-        values for exactly the fields being changed, not just the
-        fact that something changed.
+        Partially updates an Okta user's profile.
+
+        Reads the current profile first so the audit log
+        captures the old and new values for the changed fields.
         """
 
         try:
@@ -287,7 +381,9 @@ class UserService:
             )
 
             before_profile = (
-                before.get("profile", {}) if isinstance(before, dict) else {}
+                before.get("profile", {})
+                if isinstance(before, dict)
+                else {}
             )
 
             old_values = {
@@ -325,6 +421,10 @@ class UserService:
 
             raise
 
+    # ============================================================
+    # DELETE USER
+    # ============================================================
+
     async def delete_user(self, user_id):
 
         try:
@@ -356,12 +456,9 @@ class UserService:
 
             raise
 
-    async def get_user(self, user_id):
-
-        return await self.okta.request(
-            "GET",
-            f"/api/v1/users/{user_id}"
-        )
+    # ============================================================
+    # SUSPEND USER
+    # ============================================================
 
     async def suspend_user(self, user_id, reason=None):
 
@@ -378,7 +475,11 @@ class UserService:
                 old_value="ACTIVE",
                 new_value="SUSPENDED",
                 status="SUCCESS",
-                message=f"User suspended. Reason: {reason}" if reason else "User suspended"
+                message=(
+                    f"User suspended. Reason: {reason}"
+                    if reason
+                    else "User suspended"
+                )
             )
 
             return result
@@ -387,37 +488,6 @@ class UserService:
 
             self._create_log(
                 action="SUSPEND_USER",
-                user_id=user_id,
-                status="FAILED",
-                message=str(e)
-            )
-
-            raise
-
-    async def reactivate_user(self, user_id):
-
-        try:
-
-            result = await self.okta.request(
-                "POST",
-                f"/api/v1/users/{user_id}/lifecycle/unsuspend"
-            )
-
-            self._create_log(
-                action="REACTIVATE_USER",
-                user_id=user_id,
-                old_value="SUSPENDED",
-                new_value="ACTIVE",
-                status="SUCCESS",
-                message="User reactivated successfully"
-            )
-
-            return result
-
-        except Exception as e:
-
-            self._create_log(
-                action="REACTIVATE_USER",
                 user_id=user_id,
                 status="FAILED",
                 message=str(e)
@@ -446,7 +516,10 @@ class UserService:
             or profile.get("login")
         )
 
-        # No passwordChanged information available
+        # --------------------------------------------------------
+        # No passwordChanged information
+        # --------------------------------------------------------
+
         if not password_changed:
 
             return {
@@ -459,9 +532,12 @@ class UserService:
                 "expiry_days": settings.PASSWORD_EXPIRY_DAYS
             }
 
+        # --------------------------------------------------------
+        # Parse passwordChanged
+        # --------------------------------------------------------
+
         try:
 
-            # Convert Okta timestamp to datetime
             password_changed_dt = datetime.fromisoformat(
                 password_changed.replace("Z", "+00:00")
             )
@@ -478,19 +554,26 @@ class UserService:
                 "expiry_days": settings.PASSWORD_EXPIRY_DAYS
             }
 
-        # Make sure datetime is timezone-aware
+        # --------------------------------------------------------
+        # Make datetime timezone-aware
+        # --------------------------------------------------------
+
         if password_changed_dt.tzinfo is None:
 
             password_changed_dt = password_changed_dt.replace(
                 tzinfo=timezone.utc
             )
 
+        # --------------------------------------------------------
+        # Calculate expiry
+        # --------------------------------------------------------
+
         expiry_date = (
-    password_changed_dt
-    + timedelta(
-        days=settings.PASSWORD_EXPIRY_DAYS
-    )
-)
+            password_changed_dt
+            + timedelta(
+                days=settings.PASSWORD_EXPIRY_DAYS
+            )
+        )
 
         now = datetime.now(timezone.utc)
 
@@ -502,12 +585,14 @@ class UserService:
             remaining_seconds // 86400
         )
 
-        # Password already expired
+        # --------------------------------------------------------
+        # Determine status
+        # --------------------------------------------------------
+
         if remaining_seconds <= 0:
 
             status = "EXPIRED"
 
-        # Password will expire within warning period
         elif days_remaining <= settings.PASSWORD_EXPIRY_WARNING_DAYS:
 
             status = "EXPIRING_SOON"
@@ -515,6 +600,10 @@ class UserService:
         else:
 
             status = "ACTIVE"
+
+        # --------------------------------------------------------
+        # Return result
+        # --------------------------------------------------------
 
         return {
             "user_id": user_id,
@@ -525,6 +614,10 @@ class UserService:
             "status": status,
             "expiry_days": settings.PASSWORD_EXPIRY_DAYS
         }
+
+    # ============================================================
+    # GET PASSWORD EXPIRY
+    # ============================================================
 
     async def get_password_expiry(self, user_id):
 
@@ -538,6 +631,10 @@ class UserService:
         )
 
         return self._calculate_password_expiry(user)
+
+    # ============================================================
+    # LIST PASSWORD EXPIRY
+    # ============================================================
 
     async def list_password_expiry(self):
 
@@ -561,6 +658,10 @@ class UserService:
             "users": results
         }
 
+    # ============================================================
+    # FORCE PASSWORD EXPIRY
+    # ============================================================
+
     async def expire_password(self, user_id):
 
         """
@@ -572,8 +673,10 @@ class UserService:
 
         try:
 
-            # First retrieve the user so we can capture
-            # the email for the audit log.
+            # ----------------------------------------------------
+            # Retrieve user for audit email
+            # ----------------------------------------------------
+
             user = await self.okta.request(
                 "GET",
                 f"/api/v1/users/{user_id}"
@@ -586,11 +689,18 @@ class UserService:
                 or profile.get("login")
             )
 
-            # Expire password using Okta lifecycle API.
+            # ----------------------------------------------------
+            # Expire password
+            # ----------------------------------------------------
+
             result = await self.okta.request(
                 "POST",
                 f"/api/v1/users/{user_id}/lifecycle/expire_password"
             )
+
+            # ----------------------------------------------------
+            # Audit success
+            # ----------------------------------------------------
 
             self._create_log(
                 action="EXPIRE_PASSWORD",
@@ -605,6 +715,10 @@ class UserService:
             return result
 
         except Exception as e:
+
+            # ----------------------------------------------------
+            # Audit failure
+            # ----------------------------------------------------
 
             self._create_log(
                 action="EXPIRE_PASSWORD",

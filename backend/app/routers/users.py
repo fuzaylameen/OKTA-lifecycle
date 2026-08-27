@@ -160,7 +160,7 @@ async def reactivate_user(
     )
 
     try:
-        result = await service.reactivate_user(user_id)
+        result = await service.unsuspend_user(user_id)
 
         return {
             "success": True,
