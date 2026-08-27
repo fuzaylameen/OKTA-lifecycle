@@ -5,8 +5,7 @@ from app.db.database import get_db
 from app.db.models_lifecycle import LifecycleOperation
 from app.schemas.approval import (
     ApprovalCreateRequest,
-    ApprovalDecisionRequest,
-    ApprovalEscalateRequest
+    ApprovalDecisionRequest
 )
 from app.services import approval_service, lifecycle_execution_service
 
@@ -50,7 +49,10 @@ async def _finalize_linked_operation(db: Session, approval_id: int):
     )
 
     if operation:
-        await lifecycle_execution_service.finalize_operation(db, operation.id)
+        await lifecycle_execution_service.finalize_operation(
+            db,
+            operation.id
+        )
 
 
 @router.post("/")
@@ -79,7 +81,10 @@ async def create_approval(
 
     except Exception as e:
 
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 
 @router.get("/")
@@ -89,9 +94,16 @@ def get_queue(
     db: Session = Depends(get_db)
 ):
 
-    approvals = approval_service.list_queue(db, status=status, approver_role=approver_role)
+    approvals = approval_service.list_queue(
+        db,
+        status=status,
+        approver_role=approver_role
+    )
 
-    return [_serialize(a) for a in approvals]
+    return [
+        _serialize(a)
+        for a in approvals
+    ]
 
 
 @router.get("/{approval_id}")
@@ -101,11 +113,20 @@ def get_approval(
 ):
 
     try:
-        approval = approval_service.get_approval(db, approval_id)
+
+        approval = approval_service.get_approval(
+            db,
+            approval_id
+        )
+
         return _serialize(approval)
 
     except approval_service.ApprovalNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
 
 
 @router.get("/{approval_id}/history")
@@ -116,7 +137,10 @@ def get_history(
 
     try:
 
-        steps = approval_service.get_history(db, approval_id)
+        steps = approval_service.get_history(
+            db,
+            approval_id
+        )
 
         return [
             {
@@ -132,7 +156,11 @@ def get_history(
         ]
 
     except approval_service.ApprovalNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
 
 
 @router.post("/{approval_id}/approve")
@@ -152,7 +180,10 @@ async def approve(
             comment=request.comment
         )
 
-        await _finalize_linked_operation(db, approval_id)
+        await _finalize_linked_operation(
+            db,
+            approval_id
+        )
 
         db.refresh(approval)
 
@@ -162,16 +193,32 @@ async def approve(
         }
 
     except approval_service.ApprovalNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
 
     except approval_service.SeparationOfDutiesError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+
+        raise HTTPException(
+            status_code=403,
+            detail=str(e)
+        )
 
     except approval_service.InvalidApprovalStateError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+
+        raise HTTPException(
+            status_code=409,
+            detail=str(e)
+        )
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 
 @router.post("/{approval_id}/reject")
@@ -191,7 +238,10 @@ async def reject(
             comment=request.comment
         )
 
-        await _finalize_linked_operation(db, approval_id)
+        await _finalize_linked_operation(
+            db,
+            approval_id
+        )
 
         db.refresh(approval)
 
@@ -201,42 +251,29 @@ async def reject(
         }
 
     except approval_service.ApprovalNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
 
-    except approval_service.SeparationOfDutiesError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-    except approval_service.InvalidApprovalStateError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.post("/{approval_id}/escalate")
-def escalate(
-    approval_id: int,
-    request: ApprovalEscalateRequest,
-    db: Session = Depends(get_db)
-):
-
-    try:
-
-        approval = approval_service.escalate(
-            db,
-            approval_id,
-            request.approver_email,
-            comment=request.comment,
-            escalate_to_role=request.escalate_to_role
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
         )
 
-        return {
-            "success": True,
-            "approval": _serialize(approval)
-        }
+    except approval_service.SeparationOfDutiesError as e:
 
-    except approval_service.ApprovalNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(
+            status_code=403,
+            detail=str(e)
+        )
 
     except approval_service.InvalidApprovalStateError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+
+        raise HTTPException(
+            status_code=409,
+            detail=str(e)
+        )
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )

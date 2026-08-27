@@ -11,7 +11,7 @@ from app.routers import (
     export,
     approvals,
     lifecycle,
-    timeline,
+    
     bulk_users
 )
 
@@ -44,7 +44,7 @@ app.include_router(logs.router)
 app.include_router(export.router)
 app.include_router(approvals.router)
 app.include_router(lifecycle.router)
-app.include_router(timeline.router)
+
 app.include_router(bulk_users.router)
 
 

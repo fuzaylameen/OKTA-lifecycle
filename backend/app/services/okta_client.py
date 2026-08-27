@@ -24,6 +24,10 @@ class OktaClient:
         self.access_token = None
         self.token_expiry = 0
 
+    # ============================================================
+    # CREATE JWT CLIENT ASSERTION
+    # ============================================================
+
     def _create_client_assertion(self):
 
         now = int(time.time())
@@ -45,19 +49,32 @@ class OktaClient:
 
         return assertion
 
+    # ============================================================
+    # GET OKTA ACCESS TOKEN
+    # ============================================================
+
     async def get_access_token(self):
 
+        # --------------------------------------------------------
         # Reuse existing token if it is still valid
+        # --------------------------------------------------------
+
         if (
             self.access_token
             and time.time() < self.token_expiry - 60
         ):
             return self.access_token
 
+        # --------------------------------------------------------
         # Create JWT client assertion
+        # --------------------------------------------------------
+
         assertion = self._create_client_assertion()
 
-        # OAuth token request data
+        # --------------------------------------------------------
+        # OAuth token request
+        # --------------------------------------------------------
+
         data = {
             "grant_type": "client_credentials",
 
@@ -78,6 +95,10 @@ class OktaClient:
         print("Scope:", data["scope"])
         print("========================================")
 
+        # --------------------------------------------------------
+        # Send token request
+        # --------------------------------------------------------
+
         async with httpx.AsyncClient() as client:
 
             response = await client.post(
@@ -90,7 +111,10 @@ class OktaClient:
                 }
             )
 
-        # Print the actual Okta error
+        # --------------------------------------------------------
+        # Handle token errors
+        # --------------------------------------------------------
+
         if response.status_code != 200:
 
             print("\n========== OKTA TOKEN ERROR ==========")
@@ -99,6 +123,10 @@ class OktaClient:
             print("======================================\n")
 
         response.raise_for_status()
+
+        # --------------------------------------------------------
+        # Read token response
+        # --------------------------------------------------------
 
         token_data = response.json()
 
@@ -113,6 +141,10 @@ class OktaClient:
 
         return self.access_token
 
+    # ============================================================
+    # GENERIC OKTA API REQUEST
+    # ============================================================
+
     async def request(
         self,
         method: str,
@@ -120,25 +152,75 @@ class OktaClient:
         **kwargs
     ):
 
+        # --------------------------------------------------------
+        # Get access token
+        # --------------------------------------------------------
+
         token = await self.get_access_token()
+
+        # --------------------------------------------------------
+        # Prepare headers
+        # --------------------------------------------------------
 
         headers = kwargs.pop("headers", {})
 
         headers["Authorization"] = f"Bearer {token}"
         headers["Accept"] = "application/json"
 
+        # --------------------------------------------------------
+        # Build complete URL
+        # --------------------------------------------------------
+
+        url = f"{self.domain}{endpoint}"
+
+        # --------------------------------------------------------
+        # Send request
+        # --------------------------------------------------------
+
         async with httpx.AsyncClient() as client:
 
             response = await client.request(
                 method,
-                f"{self.domain}{endpoint}",
+                url,
                 headers=headers,
                 **kwargs
             )
 
+        # ========================================================
+        # DEBUG INFORMATION
+        # ========================================================
+
+        print("\n========== OKTA API REQUEST ==========")
+        print("Method:", method)
+        print("URL:", url)
+        print("Status:", response.status_code)
+
+        # IMPORTANT:
+        # We deliberately DO NOT print Authorization header.
+        # This prevents the access token from appearing in terminal.
+
+        if response.text:
+            print("Response:", response.text)
+        else:
+            print("Response: <empty>")
+
+        print("======================================\n")
+
+        # --------------------------------------------------------
+        # Raise exception for 4xx / 5xx
+        # --------------------------------------------------------
+
         response.raise_for_status()
+
+        # --------------------------------------------------------
+        # Okta lifecycle operations commonly return 204
+        # --------------------------------------------------------
 
         if response.status_code == 204:
             return None
+
+        # --------------------------------------------------------
+        # Return JSON response
+        # --------------------------------------------------------
 
         return response.json()
