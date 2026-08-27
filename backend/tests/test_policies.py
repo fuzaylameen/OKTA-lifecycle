@@ -151,6 +151,18 @@ def test_policy_5_prevent_privilege_escalation():
     assert decision.allowed is False
     assert decision.policy_name == "prevent_privilege_escalation"
 
+    # RoleManager assigning Admin role -> ALLOW
+    role_mgr = AuthContext(user_id="rm_1", role=Role.ROLE_MANAGER)
+    context_rm_assign = PolicyContext(
+        requester=role_mgr,
+        action="role_manage",
+        target_id="user_1",
+        target_role=Role.OPERATOR,
+        new_role=Role.ADMIN
+    )
+    decision_rm = policy_engine.evaluate(context_rm_assign)
+    assert decision_rm.allowed is True
+
     # Admin assigning Admin role -> ALLOW
     admin = AuthContext(user_id="admin_1", role=Role.ADMIN)
     context_admin_assign = PolicyContext(
@@ -193,14 +205,86 @@ def test_policy_7_privileged_user_protection():
     decision = policy_engine.evaluate(context_mgr_mgr)
     assert decision.allowed is False
 
+    # Manager modifying RoleManager -> DENY
+    context_mgr_rm = PolicyContext(
+        requester=manager,
+        action="suspend",
+        target_id="rm_1",
+        target_role=Role.ROLE_MANAGER,
+        reason="Disciplinary reason"
+    )
+    decision_mgr_rm = policy_engine.evaluate(context_mgr_rm)
+    assert decision_mgr_rm.allowed is False
+
+    # RoleManager modifying Admin role -> ALLOW
+    role_mgr = AuthContext(user_id="rm_1", role=Role.ROLE_MANAGER)
+    context_rm_admin = PolicyContext(
+        requester=role_mgr,
+        action="role_manage",
+        target_id="admin_1",
+        target_role=Role.ADMIN,
+        new_role=Role.MANAGER
+    )
+    decision_rm_admin = policy_engine.evaluate(context_rm_admin)
+    assert decision_rm_admin.allowed is True
+
     # Admin modifying normal user -> ALLOW
     admin = AuthContext(user_id="admin_1", role=Role.ADMIN)
     context_admin_op = PolicyContext(
         requester=admin,
         action="suspend",
         target_id="op_1",
-        target_role=Role.OPERATOR,
+        target_role=Role.AUDITOR,
         reason="Normal administrative suspension"
     )
     decision = policy_engine.evaluate(context_admin_op)
     assert decision.allowed is True
+
+
+def test_policy_8_protected_identity_groups():
+    admin = AuthContext(user_id="admin_1", role=Role.ADMIN)
+    manager = AuthContext(user_id="mgr_1", role=Role.MANAGER)
+    role_mgr = AuthContext(user_id="rm_1", role=Role.ROLE_MANAGER)
+
+    # Manager attempting to move user to Identity-Admin -> DENY
+    context_move_to_admin = PolicyContext(
+        requester=manager,
+        action="group_manage",
+        target_id="u1",
+        attributes={"old_group": "Sales", "new_group": "Identity-Admin"}
+    )
+    decision = policy_engine.evaluate(context_move_to_admin)
+    assert decision.allowed is False
+    assert decision.policy_name == "protected_identity_group_policy"
+    assert "Identity-Admin" in decision.reason or "identity-admin" in decision.reason
+
+    # Admin attempting to modify Identity-Managers -> DENY
+    context_admin_modify = PolicyContext(
+        requester=admin,
+        action="group_manage",
+        target_id="u2",
+        attributes={"old_group": "Identity-Managers", "new_group": "Engineering"}
+    )
+    decision = policy_engine.evaluate(context_admin_modify)
+    assert decision.allowed is False
+
+    # RoleManager attempting to modify Identity-Role-Managers -> DENY
+    context_rm_modify = PolicyContext(
+        requester=role_mgr,
+        action="group_manage",
+        target_id="u3",
+        attributes={"group_name": "Identity-Role-Managers"}
+    )
+    decision = policy_engine.evaluate(context_rm_modify)
+    assert decision.allowed is False
+
+    # Normal group move between non-protected groups -> ALLOW
+    context_normal_move = PolicyContext(
+        requester=manager,
+        action="group_manage",
+        target_id="u4",
+        attributes={"old_group": "Engineering", "new_group": "Product"}
+    )
+    decision = policy_engine.evaluate(context_normal_move)
+    assert decision.allowed is True
+

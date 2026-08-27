@@ -6,17 +6,29 @@ from fastapi import HTTPException, status
 
 from app.core.config import settings
 
-VALID_ROLES = {"Viewer", "Operator", "Manager", "Admin"}
+VALID_ROLES = {"Auditor", "Manager", "Admin", "RoleManager", "Viewer", "Operator"}
+
 
 
 def validate_role_str(role_str: str) -> str:
     """Validate and normalize role string against allowed system roles."""
     if not role_str:
         raise ValueError("Role cannot be empty")
+    cleaned = str(role_str).strip().lower()
+    if cleaned in ("viewer", "auditor"):
+        return "Auditor"
+    if cleaned in ("operator", "manager"):
+        return "Manager"
+    if cleaned == "admin":
+        return "Admin"
+    if cleaned in ("rolemanager", "role_manager", "role-manager", "role manager"):
+        return "RoleManager"
+
     for valid_role in VALID_ROLES:
-        if valid_role.lower() == str(role_str).strip().lower():
+        if valid_role.lower() == cleaned:
             return valid_role
     raise ValueError(f"Unknown role: {role_str}")
+
 
 
 class AuthenticationError(HTTPException):

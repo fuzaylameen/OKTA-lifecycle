@@ -9,6 +9,7 @@ from app.authorization.policies import (
     PreventPrivilegeEscalationPolicy,
     PreventSelfRoleEscalationPolicy,
     PrivilegedUserProtectionPolicy,
+    ProtectedIdentityGroupPolicy,
 )
 
 
@@ -37,7 +38,7 @@ class PolicyEngine:
 
 def create_default_policy_engine() -> PolicyEngine:
     """
-    Instantiate the default PolicyEngine with all standard safety policies (1–7).
+    Instantiate the default PolicyEngine with all standard safety policies (1–8).
     """
     engine = PolicyEngine([
         PreventSelfDeprovisionPolicy(),
@@ -47,9 +48,11 @@ def create_default_policy_engine() -> PolicyEngine:
         PreventPrivilegeEscalationPolicy(),
         PreventSelfRoleEscalationPolicy(),
         PrivilegedUserProtectionPolicy(),
+        ProtectedIdentityGroupPolicy(),
     ])
     return engine
 
 
 # Shared default policy engine instance
 policy_engine = create_default_policy_engine()
+
