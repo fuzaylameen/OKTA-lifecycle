@@ -99,9 +99,6 @@ function Dashboard() {
 
   return (
     <div className="dashboard-container">
-      {/* Ambient floating glowing orbs */}
-      <div className="dashboard-orb dashboard-orb-a" />
-      <div className="dashboard-orb dashboard-orb-b" />
 
       {/* Hero interactive centerpiece */}
       <div className="dashboard-hero card">

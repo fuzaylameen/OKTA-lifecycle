@@ -7,39 +7,7 @@
   animation: fadeIn 0.25s ease;
 }
 
-/* Ambient floating glowing orbs */
-.dashboard-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.28;
-  pointer-events: none;
-  z-index: 0;
-}
 
-.dashboard-orb-a {
-  width: 500px;
-  height: 500px;
-  background: var(--mark-color-a);
-  top: -80px;
-  right: 5%;
-  animation: orb-float 10s ease-in-out infinite alternate;
-}
-
-.dashboard-orb-b {
-  width: 450px;
-  height: 450px;
-  background: var(--mark-color-b);
-  top: 150px;
-  left: 20%;
-  animation: orb-float 12s ease-in-out infinite alternate-reverse;
-}
-
-@keyframes orb-float {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(25px, 20px) scale(1.06); }
-  100% { transform: translate(-15px, 35px) scale(0.96); }
-}
 
 /* Hero card */
 .dashboard-hero {
